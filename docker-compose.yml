@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cleanup_practical}
+      POSTGRES_USER: ${POSTGRES_USER:-cleanup_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cleanup_password}
+    ports:
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cleanup_user} -d ${POSTGRES_DB:-cleanup_practical}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-cleanup_user}:${POSTGRES_PASSWORD:-cleanup_password}@db:5432/${POSTGRES_DB:-cleanup_practical}
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
