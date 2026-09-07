@@ -1,0 +1,216 @@
+{% extends "helpdesk/base.html" %}
+{% block title %}{{ ticket.reference }} — {{ ticket.subject }}{% endblock %}
+
+{% block content %}
+{% set can_close = viewer_is_reporter or (staff and staff.is_manager) %}
+
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-4">
+    <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="badge text-bg-{{ ticket.status_badge }}">{{ ticket.status_label }}</span>
+            <span class="badge text-bg-{{ ticket.priority_badge }}">{{ ticket.priority_label }}</span>
+            {% if ticket.is_overdue %}<span class="badge text-bg-danger">Overdue</span>{% endif %}
+            {% if ticket.reopen_count %}<span class="badge text-bg-dark">Reopened ×{{ ticket.reopen_count }}</span>{% endif %}
+            <span class="live-dot" id="liveDot" title="Live updates"></span>
+        </div>
+        <h1 class="h3 fw-bold mb-1">{{ ticket.subject }}</h1>
+        <p class="text-secondary mb-0">
+            {{ ticket.reference }} &middot; {{ ticket.category_label }} &middot;
+            raised by {{ ticket.reporter_name }} ({{ ticket.department }})
+        </p>
+    </div>
+    {% if staff %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('helpdesk.dashboard') }}">Back to Dashboard</a>
+    {% endif %}
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-8">
+        <section class="card panel mb-4">
+            <div class="card-body p-4">
+                <h2 class="h5 fw-bold mb-3">Activity</h2>
+                <ul class="timeline" id="timeline">
+                    {% for event in ticket.events %}
+                        <li class="actor-{{ event.actor_role }}">
+                            <div class="d-flex justify-content-between gap-2 small text-secondary">
+                                <span><strong class="text-body">{{ event.actor_name }}</strong> · {{ event.actor_role }}</span>
+                                <span>{{ event.created_at | moment }}</span>
+                            </div>
+                            {% if event.event_type == 'status' %}
+                                <div class="fw-semibold">
+                                    Status: {{ catalog.STATUSES.get(event.from_status, {}).get('label', event.from_status) }}
+                                    &rarr; {{ catalog.STATUSES.get(event.to_status, {}).get('label', event.to_status) }}
+                                </div>
+                            {% elif event.event_type == 'created' %}
+                                <div class="fw-semibold">Complaint submitted</div>
+                            {% endif %}
+                            {% if event.message %}<div class="body">{{ event.message }}</div>{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </section>
+
+        {% if ticket.status != 'closed' %}
+            <section class="card panel mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 fw-bold mb-3">Add a Message</h2>
+                    <form method="post"
+                          action="{% if viewer_is_reporter %}{{ url_for('helpdesk.reporter_comment', reference=ticket.reference, token=token) }}{% else %}{{ url_for('helpdesk.staff_comment', reference=ticket.reference) }}{% endif %}">
+                        <textarea class="form-control mb-3" name="message" rows="3" required
+                                  placeholder="Add an update, a question, or more detail."></textarea>
+                        <button class="btn btn-primary" type="submit">Send Message</button>
+                    </form>
+                </div>
+            </section>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <section class="card panel mb-4">
+            <div class="card-body p-4">
+                <h2 class="h6 fw-bold text-uppercase text-secondary mb-3">Details</h2>
+                <dl class="row mb-0 small">
+                    <dt class="col-5">Raised</dt><dd class="col-7">{{ ticket.created_at | moment }}</dd>
+                    <dt class="col-5">Target</dt><dd class="col-7">{{ ticket.due_at | moment }}</dd>
+                    <dt class="col-5">Assigned</dt><dd class="col-7">{{ ticket.assigned_to.display_name if ticket.assigned_to else 'Unassigned' }}</dd>
+                    <dt class="col-5">Computer</dt><dd class="col-7">{{ ticket.computer_name or '—' }}</dd>
+                    <dt class="col-5">Location</dt><dd class="col-7">{{ ticket.location or '—' }}</dd>
+                    {% if ticket.resolved_at %}
+                        <dt class="col-5">Resolved</dt><dd class="col-7">{{ ticket.resolved_at | moment }} by {{ ticket.resolved_by }}</dd>
+                    {% endif %}
+                    {% if ticket.closed_at %}
+                        <dt class="col-5">Closed</dt><dd class="col-7">{{ ticket.closed_at | moment }} by {{ ticket.closed_by }}</dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </section>
+
+        {% if viewer_is_reporter %}
+            <section class="card panel mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h6 fw-bold text-uppercase text-secondary mb-3">Your Actions</h2>
+
+                    {% if ticket.is_open %}
+                        <form method="post" action="{{ url_for('helpdesk.reporter_status', reference=ticket.reference, token=token) }}" class="mb-3">
+                            <input type="hidden" name="status" value="resolved">
+                            <textarea class="form-control mb-2" name="message" rows="2"
+                                      placeholder="Optional: what fixed it?"></textarea>
+                            <button class="btn btn-success w-100" type="submit">My problem is resolved</button>
+                            <div class="form-text">This notifies the help desk immediately.</div>
+                        </form>
+                    {% endif %}
+
+                    {% if ticket.status == 'resolved' %}
+                        <form method="post" action="{{ url_for('helpdesk.reporter_status', reference=ticket.reference, token=token) }}" class="mb-3">
+                            <input type="hidden" name="status" value="closed">
+                            <button class="btn btn-outline-success w-100" type="submit">Confirm and close ticket</button>
+                        </form>
+                    {% endif %}
+
+                    {% if ticket.status in ('resolved', 'closed') %}
+                        <form method="post" action="{{ url_for('helpdesk.reporter_status', reference=ticket.reference, token=token) }}">
+                            <input type="hidden" name="status" value="open">
+                            <textarea class="form-control mb-2" name="message" rows="2"
+                                      placeholder="What is still wrong?"></textarea>
+                            <button class="btn btn-outline-danger w-100" type="submit">It is still not fixed — reopen</button>
+                        </form>
+                    {% endif %}
+                </div>
+            </section>
+
+            <section class="card panel">
+                <div class="card-body p-4">
+                    <h2 class="h6 fw-bold text-uppercase text-secondary mb-2">Your Tracking Link</h2>
+                    <p class="small text-secondary">Save this. It is the only way back into this ticket.</p>
+                    <input class="form-control form-control-sm" readonly
+                           value="{{ url_for('helpdesk.view_ticket', reference=ticket.reference, token=token, _external=True) }}">
+                </div>
+            </section>
+        {% endif %}
+
+        {% if staff %}
+            <section class="card panel mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h6 fw-bold text-uppercase text-secondary mb-3">Help Desk Actions</h2>
+
+                    <div class="d-flex gap-2 mb-3">
+                        {% if ticket.assigned_to_id is none %}
+                            <form method="post" action="{{ url_for('helpdesk.staff_claim', reference=ticket.reference) }}" class="m-0 flex-fill">
+                                <button class="btn btn-primary btn-sm w-100" type="submit">Pick up this task</button>
+                            </form>
+                        {% else %}
+                            <form method="post" action="{{ url_for('helpdesk.staff_release', reference=ticket.reference) }}" class="m-0 flex-fill">
+                                <button class="btn btn-outline-secondary btn-sm w-100" type="submit">Return to the queue</button>
+                            </form>
+                        {% endif %}
+                    </div>
+
+                    <form method="post" action="{{ url_for('helpdesk.staff_assign', reference=ticket.reference) }}" class="mb-3">
+                        <label class="form-label fw-semibold small">Transfer to</label>
+                        <div class="input-group input-group-sm">
+                            <select class="form-select" name="staff_id">
+                                {% for member in staff_members %}
+                                    <option value="{{ member.id }}" {% if ticket.assigned_to_id == member.id %}selected{% endif %}>{{ member.display_name }} — {{ member.role_label }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-outline-primary" type="submit">Transfer</button>
+                        </div>
+                    </form>
+
+                    <form method="post" action="{{ url_for('helpdesk.staff_priority', reference=ticket.reference) }}" class="mb-3">
+                        <label class="form-label fw-semibold small">Priority</label>
+                        <div class="input-group input-group-sm">
+                            <select class="form-select" name="priority">
+                                {% for key, meta in catalog.PRIORITIES.items() %}
+                                    <option value="{{ key }}" {% if ticket.priority == key %}selected{% endif %}>{{ meta.label }} ({{ meta.sla_hours }}h)</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-outline-primary" type="submit">Set</button>
+                        </div>
+                    </form>
+
+                    {% if ticket.status == 'open' %}
+                        <form method="post" action="{{ url_for('helpdesk.staff_status', reference=ticket.reference) }}" class="mb-3">
+                            <input type="hidden" name="status" value="in_progress">
+                            <button class="btn btn-warning w-100 btn-sm" type="submit">Start work</button>
+                        </form>
+                    {% endif %}
+
+                    {% if ticket.is_open %}
+                        <form method="post" action="{{ url_for('helpdesk.staff_status', reference=ticket.reference) }}" class="mb-3">
+                            <input type="hidden" name="status" value="resolved">
+                            <textarea class="form-control form-control-sm mb-2" name="message" rows="3" required
+                                      placeholder="Resolution notes (required)"></textarea>
+                            <button class="btn btn-success w-100 btn-sm" type="submit">Mark resolved</button>
+                        </form>
+                    {% endif %}
+
+                    {% if ticket.status == 'resolved' %}
+                        {% if staff.is_manager %}
+                            <form method="post" action="{{ url_for('helpdesk.staff_status', reference=ticket.reference) }}">
+                                <input type="hidden" name="status" value="closed">
+                                <button class="btn btn-outline-secondary w-100 btn-sm" type="submit">Close ticket</button>
+                            </form>
+                        {% else %}
+                            <p class="small text-secondary mb-0">
+                                Waiting for the reporter or the ICT manager to close this ticket.
+                            </p>
+                        {% endif %}
+                    {% endif %}
+                </div>
+            </section>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    HelpDesk.watchTicket({
+        reference: {{ ticket.reference | tojson }},
+        token: {{ (token or '') | tojson }},
+        liveDotId: 'liveDot',
+    });
+</script>
+{% endblock %}

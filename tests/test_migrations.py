@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from models import CleanupRecord
+from models import MaintenanceReport
 
 
 def test_flask_migrate_db_command_is_registered(app):
@@ -15,13 +15,13 @@ def test_seed_data_command_is_idempotent(app):
     runner = app.test_cli_runner()
 
     with app.app_context():
-        before_count = CleanupRecord.query.count()
+        before_count = MaintenanceReport.query.count()
 
     result = runner.invoke(args=["seed-data"])
 
     assert result.exit_code == 0
     with app.app_context():
-        assert CleanupRecord.query.count() == before_count
+        assert MaintenanceReport.query.count() == before_count
 
 
 def test_entrypoint_runs_migrations_before_seed_data():

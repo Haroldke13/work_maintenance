@@ -1,15 +1,24 @@
-from functools import wraps
+import os
+from datetime import date, datetime, time
 
-from flask import Flask, abort, current_app, flash, redirect, render_template, request, session, url_for
-from flask_migrate import Migrate
+from flask import Flask, abort, current_app, flash, redirect, render_template, request, url_for
 
+from admin_users import register_admin_user_routes
+from auth import (
+    admin_required,
+    current_admin,
+    current_user,
+    landing_page_for,
+    login_user,
+    logout_user,
+)
 from config import Config
+from extensions import db, migrate, socketio
 from form_schema import FIELD_SECTIONS, blank_form_data, iter_fields
-from models import CleanupRecord, User, db
-from seed_data import initial_cleanup_records
-
-
-migrate = Migrate()
+from HELP_DESK import register_helpdesk, seed_helpdesk
+from models import HELPDESK_ROLES, MaintenanceReport, User
+from notifications import email_maintenance_report
+from seed_data import initial_maintenance_reports
 
 
 def create_app(config_class=Config):
@@ -17,14 +26,37 @@ def create_app(config_class=Config):
     app.config.from_object(config_class)
     db.init_app(app)
     migrate.init_app(app, db, render_as_batch=True)
+    socketio.init_app(app)
 
     register_template_filters(app)
     register_routes(app)
     register_commands(app)
+    register_helpdesk(app)
+    register_admin_user_routes(app)
     return app
 
 
 def register_template_filters(app: Flask) -> None:
+    @app.context_processor
+    def inject_complaint_counts():
+        """Powers the navbar Complaints button and its badge on every page."""
+        user = current_user()
+        if user is None:
+            return {"current_user": None, "complaints_total": 0, "complaints_open": 0}
+
+        from HELP_DESK import catalog as helpdesk_catalog
+        from HELP_DESK.models import Ticket
+
+        try:
+            total = Ticket.query.count()
+            open_count = Ticket.query.filter(
+                Ticket.status.in_(helpdesk_catalog.OPEN_STATUSES)
+            ).count()
+        except Exception:
+            total = open_count = 0
+
+        return {"current_user": user, "complaints_total": total, "complaints_open": open_count}
+
     @app.template_filter("display_value")
     def display_value(value):
         if value is True:
@@ -33,6 +65,12 @@ def register_template_filters(app: Flask) -> None:
             return "No"
         if value in (None, ""):
             return "—"
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M")
+        if isinstance(value, date):
+            return value.strftime("%Y-%m-%d")
+        if isinstance(value, time):
+            return value.strftime("%H:%M")
         return value
 
 
@@ -51,144 +89,154 @@ def register_commands(app: Flask) -> None:
 def register_routes(app: Flask) -> None:
     @app.route("/")
     def index():
-        return redirect(url_for("cleanup_form"))
+        return redirect(url_for("maintenance_form"))
 
-    @app.route("/cleanup", methods=["GET", "POST"])
-    def cleanup_form():
+    @app.route("/maintenance", methods=["GET", "POST"])
+    def maintenance_form():
         if request.method == "POST":
             form_data = collect_form_data(request.form)
-            errors = validate_required_fields(form_data)
+            errors = validate_form_data(form_data)
             if errors:
                 for error in errors:
                     flash(error, "danger")
                 return render_template(
-                    "cleanup.html",
+                    "maintenance.html",
                     field_sections=FIELD_SECTIONS,
                     form_data=form_data,
                 )
 
-            record = CleanupRecord(form_data=form_data)
-            db.session.add(record)
+            report = MaintenanceReport(**coerce_form_data(form_data))
+            db.session.add(report)
             db.session.commit()
-            flash("Cleanup practical record saved.", "success")
-            return redirect(url_for("table", record_id=record.id))
+            email_maintenance_report(report)
+            flash("Computer maintenance report saved.", "success")
+            return redirect(url_for("table", report_id=report.id))
 
         return render_template(
-            "cleanup.html",
+            "maintenance.html",
             field_sections=FIELD_SECTIONS,
             form_data=blank_form_data(),
         )
 
-    @app.route("/table/<int:record_id>")
-    def table(record_id: int):
-        record = db.session.get(CleanupRecord, record_id)
-        if record is None:
+    @app.route("/table/<int:report_id>")
+    def table(report_id: int):
+        report = db.session.get(MaintenanceReport, report_id)
+        if report is None:
             abort(404)
         return render_template(
             "table.html",
             field_sections=FIELD_SECTIONS,
-            record=record,
+            report=report,
         )
 
-    @app.route("/admin", methods=["GET", "POST"])
-    def admin():
-        admin_user = current_admin()
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        """One sign-in for the maintenance admin area and the ICT help desk."""
+        next_url = request.values.get("next") or ""
 
         if request.method == "POST":
-            action = request.form.get("action")
-            if action == "login":
-                username = request.form.get("username", "").strip()
-                password = request.form.get("password", "")
-                user = User.query.filter_by(username=username).first()
-                if user and user.is_admin and user.check_password(password):
-                    session["admin_user_id"] = user.id
-                    flash("Admin login successful.", "success")
-                    return redirect(url_for("admin"))
-                flash("Invalid admin username or password.", "danger")
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "")
+            user = User.query.filter_by(username=username, is_active=True).first()
 
-            elif action == "create_user":
-                if admin_user is None:
-                    flash("Admin login required before creating users.", "warning")
-                    return redirect(url_for("admin"))
+            if user and user.check_password(password):
+                login_user(user)
+                flash(f"Signed in as {user.display_name}.", "success")
+                return redirect(next_url or landing_page_for(user))
+            flash("Invalid username or password.", "danger")
 
-                username = request.form.get("username", "").strip()
-                if not username:
-                    flash("Username is required.", "danger")
-                elif User.query.filter_by(username=username).first():
-                    flash("That username already exists.", "danger")
-                else:
-                    user = User(username=username, is_admin=False, created_by=admin_user.username)
-                    user.set_password(current_default_user_password())
-                    db.session.add(user)
-                    db.session.commit()
-                    flash(f"User {username} created with the default password.", "success")
-                return redirect(url_for("admin"))
+        return render_template("login.html", next_url=next_url, user=current_user())
 
+    @app.route("/logout", methods=["POST"])
+    def logout():
+        logout_user()
+        flash("Signed out.", "info")
+        return redirect(url_for("login"))
+
+    @app.route("/admin")
+    @admin_required
+    def admin():
         return render_template(
             "admin.html",
-            admin_user=admin_user,
-            users=User.query.order_by(User.created_at.desc()).all() if admin_user else [],
+            admin_user=current_admin(),
+            users=User.query.order_by(User.created_at.desc()).limit(8).all(),
+            user_count=User.query.count(),
+            admin_count=User.query.filter_by(is_admin=True, is_active=True).count(),
+            helpdesk_count=User.query.filter(User.helpdesk_role.isnot(None)).count(),
             default_user_password=current_default_user_password(),
-            records_count=CleanupRecord.query.count() if admin_user else 0,
+            reports_count=MaintenanceReport.query.count(),
         )
-
-    @app.route("/admin/logout", methods=["POST"])
-    def admin_logout():
-        session.pop("admin_user_id", None)
-        flash("Logged out.", "info")
-        return redirect(url_for("admin"))
 
     @app.route("/admin/records")
     @admin_required
     def all_records():
-        records = CleanupRecord.query.order_by(CleanupRecord.id.asc()).all()
+        reports = MaintenanceReport.query.order_by(MaintenanceReport.id.asc()).all()
         return render_template(
             "all records.html",
             field_sections=FIELD_SECTIONS,
-            records=records,
+            reports=reports,
         )
 
 
 def collect_form_data(submitted_form) -> dict:
-    data = {}
-    for field in iter_fields():
-        field_name = field["name"]
-        if field["type"] == "checkbox":
-            data[field_name] = field_name in submitted_form
-        else:
-            data[field_name] = submitted_form.get(field_name, "").strip()
-    return data
+    """Read the posted form into raw strings so an invalid post can be re-rendered."""
+    return {
+        field["name"]: submitted_form.get(field["name"], "").strip() for field in iter_fields()
+    }
 
 
-def validate_required_fields(form_data: dict) -> list[str]:
+def validate_form_data(form_data: dict) -> list[str]:
     errors = []
     for field in iter_fields():
-        if field.get("required") and not str(form_data.get(field["name"], "")).strip():
+        value = form_data.get(field["name"], "")
+
+        if field.get("required") and not value:
             errors.append(f"{field['label']} is required.")
+            continue
+        if not value:
+            continue
+
+        if field["type"] == "date" and parse_date(value) is None:
+            errors.append(f"{field['label']} must be a valid date (YYYY-MM-DD).")
+        elif field["type"] == "time" and parse_time(value) is None:
+            errors.append(f"{field['label']} must be a valid time (HH:MM).")
+        elif field["type"] == "yesno" and value not in ("Yes", "No"):
+            errors.append(f"{field['label']} must be Yes or No.")
     return errors
 
 
-def current_admin():
-    admin_user_id = session.get("admin_user_id")
-    if not admin_user_id:
+def coerce_form_data(form_data: dict) -> dict:
+    """Turn validated form strings into the Python values the columns expect."""
+    coerced = {}
+    for field in iter_fields():
+        value = form_data.get(field["name"], "")
+        field_type = field["type"]
+
+        if field_type == "yesno":
+            coerced[field["name"]] = {"Yes": True, "No": False}.get(value)
+        elif field_type == "date":
+            coerced[field["name"]] = parse_date(value)
+        elif field_type == "time":
+            coerced[field["name"]] = parse_time(value)
+        else:
+            coerced[field["name"]] = value or None
+    return coerced
+
+
+def parse_date(value: str):
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
         return None
 
-    user = db.session.get(User, admin_user_id)
-    if user and user.is_admin:
-        return user
-    session.pop("admin_user_id", None)
+
+def parse_time(value: str):
+    for time_format in ("%H:%M", "%H:%M:%S"):
+        try:
+            return datetime.strptime(value, time_format).time()
+        except ValueError:
+            continue
     return None
-
-
-def admin_required(route_handler):
-    @wraps(route_handler)
-    def wrapped_route(*args, **kwargs):
-        if current_admin() is None:
-            flash("Admin login required.", "warning")
-            return redirect(url_for("admin"))
-        return route_handler(*args, **kwargs)
-
-    return wrapped_route
 
 
 def current_default_user_password() -> str:
@@ -203,33 +251,89 @@ def initialize_database(app: Flask) -> None:
 
 def seed_database(app: Flask) -> None:
     with app.app_context():
-        seed_admin_user(app)
-        seed_cleanup_records()
+        seed_accounts(app)
+        seed_maintenance_reports()
         db.session.commit()
+        seed_helpdesk(app)
 
 
-def seed_admin_user(app: Flask) -> None:
-    admin_username = app.config["ADMIN_USERNAME"]
-    admin_password = app.config["ADMIN_PASSWORD"]
-    admin_user = User.query.filter_by(username=admin_username).first()
+def _support_email(app: Flask) -> str | None:
+    """The shared ICT address: the notify list minus the administrator's own."""
+    admin_email = app.config.get("ADMIN_EMAIL")
+    others = [a for a in app.config.get("NOTIFY_EMAILS", []) if a != admin_email]
+    return others[0] if others else admin_email
 
-    if admin_user is None:
-        admin_user = User(username=admin_username, is_admin=True)
-        admin_user.set_password(admin_password)
-        db.session.add(admin_user)
+
+def seed_accounts(app: Flask) -> None:
+    """One account table for the admin area and the help desk alike."""
+    accounts = [
+        {
+            "username": app.config["ADMIN_USERNAME"],
+            "password": app.config["ADMIN_PASSWORD"],
+            "full_name": "ICT Administrator",
+            "email": app.config["ADMIN_EMAIL"],
+            "is_admin": True,
+            "helpdesk_role": "manager",
+        },
+        {
+            "username": app.config["HELPDESK_MANAGER_USERNAME"],
+            "password": app.config["HELPDESK_MANAGER_PASSWORD"],
+            "full_name": "ICT Manager",
+            "email": _support_email(app),
+            "is_admin": False,
+            "helpdesk_role": "manager",
+        },
+        {
+            "username": app.config["HELPDESK_OFFICER_USERNAME"],
+            "password": app.config["HELPDESK_OFFICER_PASSWORD"],
+            "full_name": "ICT Help Desk Officer",
+            "email": _support_email(app),
+            "is_admin": False,
+            "helpdesk_role": "officer",
+        },
+    ]
+
+    for account in accounts:
+        user = User.query.filter_by(username=account["username"]).first()
+
+        if user is None:
+            user = User(
+                username=account["username"],
+                full_name=account["full_name"],
+                email=account["email"],
+                is_admin=account["is_admin"],
+                helpdesk_role=account["helpdesk_role"],
+            )
+            user.set_password(account["password"])
+            db.session.add(user)
+            continue
+
+        user.full_name = user.full_name or account["full_name"]
+        user.email = user.email or account["email"]
+        user.is_admin = account["is_admin"] or user.is_admin
+        user.helpdesk_role = account["helpdesk_role"]
+        user.is_active = True
+        if not user.check_password(account["password"]):
+            user.set_password(account["password"])
+
+
+def seed_maintenance_reports() -> None:
+    if MaintenanceReport.query.count() > 0:
         return
 
-    admin_user.is_admin = True
-    if not admin_user.check_password(admin_password):
-        admin_user.set_password(admin_password)
-
-
-def seed_cleanup_records() -> None:
-    if CleanupRecord.query.count() > 0:
-        return
-
-    for record_data in initial_cleanup_records():
-        db.session.add(CleanupRecord(form_data=record_data, submitted_by_username="seed"))
+    for report_data in initial_maintenance_reports():
+        db.session.add(MaintenanceReport(submitted_by_username="seed", **report_data))
 
 
 app = create_app()
+
+
+if __name__ == "__main__":
+    # socketio.run keeps WebSocket support that a plain `flask run` would drop.
+    socketio.run(
+        app,
+        host=os.getenv("APP_HOST", "0.0.0.0"),
+        port=int(os.getenv("APP_PORT", "5000")),
+        debug=True,
+        allow_unsafe_werkzeug=True,
+    )

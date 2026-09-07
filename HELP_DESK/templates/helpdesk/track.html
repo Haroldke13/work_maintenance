@@ -1,0 +1,29 @@
+{% extends "helpdesk/base.html" %}
+{% block title %}Track a Ticket — ICT Help Desk{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card panel">
+            <div class="card-body p-4">
+                <h1 class="h4 fw-bold mb-2">Track a Ticket</h1>
+                <p class="text-secondary">
+                    Enter the reference and tracking code from the link you were given when
+                    you submitted your complaint.
+                </p>
+                <form method="post" action="{{ url_for('helpdesk.track_ticket') }}" class="vstack gap-3">
+                    <div>
+                        <label for="reference" class="form-label fw-semibold">Reference</label>
+                        <input class="form-control" id="reference" name="reference" required placeholder="HD-2026-0001">
+                    </div>
+                    <div>
+                        <label for="token" class="form-label fw-semibold">Tracking code</label>
+                        <input class="form-control" id="token" name="token" required>
+                    </div>
+                    <button class="btn btn-primary btn-lg" type="submit">Open Ticket</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

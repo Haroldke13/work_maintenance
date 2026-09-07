@@ -204,7 +204,8 @@ main() {
 
     if [[ "$RUN_SERVER" == "1" ]]; then
         log "Starting Gunicorn on ${APP_HOST}:${APP_PORT}"
-        exec "$VENV_DIR/bin/gunicorn" --bind "${APP_HOST}:${APP_PORT}" "$FLASK_APP_MODULE"
+        exec "$VENV_DIR/bin/gunicorn" --worker-class gthread --threads 16 --workers 1 \
+        --bind "${APP_HOST}:${APP_PORT}" "$FLASK_APP_MODULE"
     fi
 }
 

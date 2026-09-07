@@ -1,0 +1,127 @@
+{% extends "helpdesk/base.html" %}
+{% block title %}Report a Problem — ICT Help Desk{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h1 class="h3 fw-bold mb-1">Report a Problem</h1>
+    <p class="text-secondary mb-0">
+        Tell the ICT help desk what is wrong. You will get a reference number and a private
+        link so you can follow progress and tell us when it is fixed.
+    </p>
+</div>
+
+<form method="post" action="{{ url_for('helpdesk.new_ticket') }}">
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <section class="card panel mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 fw-bold mb-3">The Problem</h2>
+
+                    <div class="mb-3">
+                        <label for="category_key" class="form-label fw-semibold">Problem type</label>
+                        <select class="form-select" id="category_key" name="category_key" required>
+                            <option value="">Choose the closest match…</option>
+                            {% for key, label in catalog.category_choices() %}
+                                <option value="{{ key }}" {% if form_data.category_key == key %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3 {% if form_data.category_key != 'other' %}d-none{% endif %}" id="otherWrapper">
+                        <label for="other_category" class="form-label fw-semibold">Describe the problem type</label>
+                        <textarea class="form-control" id="other_category" name="other_category" rows="3"
+                                  placeholder="In your own words, what kind of problem is this?">{{ form_data.other_category }}</textarea>
+                        <div class="form-text">Used as the problem type on your ticket.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="subject" class="form-label fw-semibold">Short summary</label>
+                        <input class="form-control" id="subject" name="subject" maxlength="160" required
+                               value="{{ form_data.subject }}" placeholder="e.g. Laptop will not charge past 20%">
+                    </div>
+
+                    <div class="mb-0">
+                        <label for="description" class="form-label fw-semibold">What is happening?</label>
+                        <textarea class="form-control" id="description" name="description" rows="6" required
+                                  placeholder="What happens, when it started, any error message, and what you already tried.">{{ form_data.description }}</textarea>
+                        <div class="form-text">Error messages and what you already tried help us fix it faster.</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card panel mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 fw-bold mb-3">About You</h2>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="reporter_name" class="form-label fw-semibold">Your name</label>
+                            <input class="form-control" id="reporter_name" name="reporter_name" required
+                                   value="{{ form_data.reporter_name }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="department" class="form-label fw-semibold">Department</label>
+                            <input class="form-control" id="department" name="department" required
+                                   value="{{ form_data.department }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="reporter_email" class="form-label fw-semibold">Email <span class="text-secondary fw-normal">(optional)</span></label>
+                            <input class="form-control" type="email" id="reporter_email" name="reporter_email"
+                                   value="{{ form_data.reporter_email }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="location" class="form-label fw-semibold">Office / desk location</label>
+                            <input class="form-control" id="location" name="location" value="{{ form_data.location }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="computer_name" class="form-label fw-semibold">Computer name</label>
+                            <input class="form-control" id="computer_name" name="computer_name"
+                                   value="{{ form_data.computer_name }}" placeholder="e.g. NGOB-PC-001">
+                            <div class="form-text">Links this ticket to the computer's maintenance reports.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="col-lg-4">
+            <aside class="card panel position-sticky" style="top: 5.5rem;">
+                <div class="card-body p-4">
+                    <h2 class="h6 fw-bold text-uppercase text-secondary mb-3">Try This First</h2>
+                    <div id="selfHelpEmpty" class="text-secondary">
+                        Choose a problem type and we will show quick steps that often fix it
+                        straight away — no waiting for the help desk.
+                    </div>
+                    <ul id="selfHelpList" class="mb-3 d-none ps-3"></ul>
+                    <div id="selfHelpNote" class="alert alert-success mb-0 d-none">
+                        If one of these fixes it, you do not need to submit this form.
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <div class="position-sticky bottom-0 bg-white border rounded-4 shadow-sm p-3 mb-4">
+        <div class="d-flex flex-column flex-md-row gap-2 justify-content-between align-items-md-center">
+            <span class="text-secondary">Urgency is set automatically from the problem type.</span>
+            <button type="submit" class="btn btn-primary btn-lg px-4">Submit Complaint</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const SELF_HELP = {{ self_help_json | safe }};
+</script>
+<script>
+    HelpDesk.wireCategoryPicker({
+        selectId: 'category_key',
+        otherWrapperId: 'otherWrapper',
+        otherInputId: 'other_category',
+        listId: 'selfHelpList',
+        emptyId: 'selfHelpEmpty',
+        noteId: 'selfHelpNote',
+        steps: SELF_HELP,
+    });
+</script>
+{% endblock %}

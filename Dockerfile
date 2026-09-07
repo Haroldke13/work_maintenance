@@ -14,4 +14,5 @@ RUN chmod +x /app/entrypoint.sh
 EXPOSE 5000
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:create_app()"]
+CMD ["gunicorn", "--worker-class", "gthread", "--threads", "16", "--workers", "1", \
+     "--bind", "0.0.0.0:5000", "app:create_app()"]

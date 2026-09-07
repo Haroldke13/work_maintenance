@@ -23,4 +23,30 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "jonyango")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "field.123")
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "jonyango@pbora.go.ke")
     DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "field.123")
+
+    # Help desk (served by the HELP_DESK blueprint on this same app and port).
+    HELPDESK_MANAGER_USERNAME = os.getenv("HELPDESK_MANAGER_USERNAME", "ictmanager")
+    HELPDESK_MANAGER_PASSWORD = os.getenv("HELPDESK_MANAGER_PASSWORD", "field.123")
+    HELPDESK_OFFICER_USERNAME = os.getenv("HELPDESK_OFFICER_USERNAME", "icthelpdesk")
+    HELPDESK_OFFICER_PASSWORD = os.getenv("HELPDESK_OFFICER_PASSWORD", "field.123")
+
+    # Email notifications. Every submitted response is mailed to NOTIFY_EMAILS.
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "true").strip().lower() in ("1", "true", "yes")
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER") or os.getenv("MAIL_USERNAME", "")
+    # The name recipients see in their inbox, instead of the Gmail account name.
+    MAIL_SENDER_NAME = os.getenv("MAIL_SENDER_NAME", "PBORA")
+    MAIL_TIMEOUT = int(os.getenv("MAIL_TIMEOUT", "20"))
+    MAIL_SUPPRESS_SEND = False
+    NOTIFY_EMAILS = [
+        address.strip()
+        for address in os.getenv(
+            "NOTIFY_EMAILS", "jonyango@pbora.go.ke,ictsupport@pbora.go.ke"
+        ).split(",")
+        if address.strip()
+    ]

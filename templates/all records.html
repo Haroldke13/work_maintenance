@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>All Cleanup Records</title>
+    <title>All Maintenance Reports</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap5.min.css" rel="stylesheet">
     <style>
@@ -16,10 +16,18 @@
 <body>
 <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
     <div class="container-fluid page-shell">
-        <a class="navbar-brand fw-semibold" href="{{ url_for('cleanup_form') }}">ICT Cleanup Practical</a>
+        <a class="navbar-brand fw-semibold" href="{{ url_for('maintenance_form') }}">PBO Regulatory Authority ICT</a>
         <div class="d-flex gap-2">
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin') }}">Admin</a>
-            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('cleanup_form') }}">New Record</a>
+            {% if current_user %}
+                <a class="btn btn-outline-primary btn-sm position-relative" href="{{ url_for('helpdesk.complaints') }}">
+                    Complaints
+                    <span class="badge rounded-pill text-bg-danger">{{ complaints_total }}</span>
+                    {% if complaints_open %}<span class="visually-hidden">{{ complaints_open }} open</span>{% endif %}
+                </a>
+            {% endif %}
+            <a class="btn btn-danger btn-sm" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem</a>
+            <a class="btn btn-outline-primary btn-sm" href="{{ url_for('maintenance_form') }}">New Report</a>
         </div>
     </div>
 </nav>
@@ -37,10 +45,10 @@
 
     <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-4">
         <div>
-            <h1 class="h3 fw-bold mb-1">All Cleanup Records</h1>
-            <p class="text-secondary mb-0">Admin-only table containing every field captured from the cleanup form.</p>
+            <h1 class="h3 fw-bold mb-1">All Maintenance Reports</h1>
+            <p class="text-secondary mb-0">Admin-only table containing every field captured on the NGOB/ICT/104b report.</p>
         </div>
-        <span class="badge text-bg-primary fs-6">{{ records|length }} records</span>
+        <span class="badge text-bg-primary fs-6">{{ reports|length }} reports</span>
     </div>
 
     <div class="card panel">
@@ -59,13 +67,13 @@
                     </tr>
                     </thead>
                     <tbody>
-                    {% for record in records %}
+                    {% for report in reports %}
                         <tr>
-                            <td>{{ record.id }}</td>
-                            <td>{{ record.submitted_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+                            <td>{{ report.id }}</td>
+                            <td>{{ report.submitted_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
                             {% for section in field_sections %}
                                 {% for field in section.fields %}
-                                    <td>{{ record.form_data.get(field.name)|display_value }}</td>
+                                    <td>{{ report.value_for(field.name)|display_value }}</td>
                                 {% endfor %}
                             {% endfor %}
                         </tr>

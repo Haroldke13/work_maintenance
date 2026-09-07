@@ -1,0 +1,146 @@
+{% extends "helpdesk/base.html" %}
+{% block title %}Help Desk Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-end gap-3 mb-4">
+    <div>
+        <div class="d-flex align-items-center gap-2 mb-1">
+            <span class="live-dot" id="liveDot" title="Live updates"></span>
+            <span class="small text-secondary" id="liveLabel">Connecting…</span>
+        </div>
+        <h1 class="h3 fw-bold mb-1">Help Desk Dashboard</h1>
+        <p class="text-secondary mb-0">
+            Signed in as {{ staff.display_name }} ({{ staff.role_label }}).
+        </p>
+    </div>
+    <a class="btn btn-outline-secondary" href="{{ url_for('helpdesk.export_csv') }}">Export CSV</a>
+</div>
+
+<div class="row g-3 mb-4">
+    {% set tiles = [
+        ('open', 'Open', 'danger'),
+        ('in_progress', 'In Progress', 'warning'),
+        ('overdue', 'Overdue', 'danger'),
+        ('unassigned', 'Unassigned', 'secondary'),
+        ('resolved', 'Resolved', 'success'),
+        ('closed', 'Closed', 'secondary'),
+    ] %}
+    {% for key, label, tone in tiles %}
+        <div class="col-6 col-lg-2">
+            <div class="card stat-tile panel h-100">
+                <div class="card-body py-3">
+                    <div class="stat-value text-{{ tone }}" data-stat="{{ key }}">{{ stats[key] }}</div>
+                    <div class="small text-secondary">{{ label }}</div>
+                </div>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+
+{% if stats.average_resolution_minutes is not none %}
+    <p class="text-secondary small">
+        Average time to resolve: <strong>{{ stats.average_resolution_minutes }}</strong> minutes.
+    </p>
+{% endif %}
+
+<ul class="nav nav-pills mb-3">
+    {% for key, label in [('active', 'Active queue'), ('mine', 'My tasks (' ~ mine_count ~ ')'), ('unassigned', 'Unassigned'), ('open', 'Open'), ('in_progress', 'In Progress'), ('resolved', 'Resolved'), ('closed', 'Closed'), ('all', 'All')] %}
+        <li class="nav-item">
+            <a class="nav-link {% if status_filter == key %}active{% endif %}"
+               href="{{ url_for('helpdesk.dashboard', status=key) }}">{{ label }}</a>
+        </li>
+    {% endfor %}
+</ul>
+
+<div class="card panel">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                <tr>
+                    <th>Reference</th>
+                    <th>Subject</th>
+                    <th>Category</th>
+                    <th>Reporter</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Assigned</th>
+                    <th>Target</th>
+                    <th class="text-end">Task</th>
+                </tr>
+                </thead>
+                <tbody id="ticketRows">
+                {% for ticket in tickets %}
+                    <tr class="{% if ticket.is_overdue %}overdue{% endif %}" data-reference="{{ ticket.reference }}">
+                        <td><a href="{{ url_for('helpdesk.view_ticket', reference=ticket.reference) }}" class="fw-semibold text-decoration-none">{{ ticket.reference }}</a></td>
+                        <td>{{ ticket.subject }}</td>
+                        <td class="small text-secondary">{{ ticket.category_summary }}</td>
+                        <td class="small">{{ ticket.reporter_name }}<br><span class="text-secondary">{{ ticket.department }}</span></td>
+                        <td><span class="badge text-bg-{{ ticket.priority_badge }}">{{ ticket.priority_label }}</span></td>
+                        <td>
+                            <span class="badge text-bg-{{ ticket.status_badge }}">{{ ticket.status_label }}</span>
+                            {% if ticket.reopen_count %}<span class="badge text-bg-dark">↻{{ ticket.reopen_count }}</span>{% endif %}
+                        </td>
+                        <td class="small">{{ ticket.assigned_to.display_name if ticket.assigned_to else '—' }}</td>
+                        <td class="small {% if ticket.is_overdue %}text-danger fw-semibold{% endif %}">{{ ticket.due_at | moment }}</td>
+                        <td class="text-end">
+                            {% if ticket.status in ('resolved', 'closed') %}
+                                <span class="text-secondary small">—</span>
+                            {% else %}
+                                {% set mine = ticket.assigned_to_id == staff.id %}
+                                {% set free = ticket.assigned_to_id is none %}
+                                {% set can_move = free or mine or staff.is_manager %}
+                                <div class="d-flex gap-1 justify-content-end align-items-center flex-nowrap">
+                                    {% if free %}
+                                        <form method="post" action="{{ url_for('helpdesk.staff_claim', reference=ticket.reference) }}" class="m-0">
+                                            <input type="hidden" name="origin" value="queue">
+                                            <input type="hidden" name="status" value="{{ status_filter }}">
+                                            <button class="btn btn-sm btn-primary" type="submit">Pick</button>
+                                        </form>
+                                    {% elif mine %}
+                                        <span class="badge text-bg-primary">Yours</span>
+                                    {% endif %}
+
+                                    {% if can_move and not free %}
+                                        <form method="post" action="{{ url_for('helpdesk.staff_release', reference=ticket.reference) }}" class="m-0">
+                                            <input type="hidden" name="origin" value="queue">
+                                            <input type="hidden" name="status" value="{{ status_filter }}">
+                                            <button class="btn btn-sm btn-outline-secondary" type="submit">Return</button>
+                                        </form>
+                                    {% endif %}
+
+                                    {% if can_move %}
+                                        <form method="post" action="{{ url_for('helpdesk.staff_assign', reference=ticket.reference) }}"
+                                              class="m-0 d-flex gap-1">
+                                            <input type="hidden" name="origin" value="queue">
+                                            <input type="hidden" name="status" value="{{ status_filter }}">
+                                            <select class="form-select form-select-sm" name="staff_id" style="min-width: 11rem;">
+                                                <option value="">Transfer to…</option>
+                                                {% for member in staff_members %}
+                                                    {% if member.id != ticket.assigned_to_id %}
+                                                        <option value="{{ member.id }}">{{ member.display_name }} — {{ member.role_label }}</option>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </select>
+                                            <button class="btn btn-sm btn-outline-primary" type="submit">Go</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="9" class="text-center text-secondary py-4">No tickets in this view.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    HelpDesk.watchDashboard({ liveDotId: 'liveDot', liveLabelId: 'liveLabel' });
+</script>
+{% endblock %}
