@@ -16,8 +16,10 @@ FIELD_SECTIONS = [
         "title": "Report Details",
         "description": "Header of the NGOB/ICT/104b maintenance report.",
         "fields": [
-            {"name": "serial_no", "label": "Serial No", "type": "text"},
-            {"name": "computer_name", "label": "Computer Name", "type": "text", "required": True},
+            {"name": "serial_no", "label": "CPU SNo", "type": "text"},
+            {"name": "computer_name", "label": "CPU model", "type": "text", "required": True},
+            {"name": "desktop_sno", "label": "Desktop SNo", "type": "text"},
+            {"name": "desktop_model", "label": "Desktop Model", "type": "text"},
             {"name": "department", "label": "Department", "type": "text", "required": True},
             {"name": "officer_name", "label": "Officer Name", "type": "text", "required": True},
             {"name": "report_time", "label": "Time", "type": "time"},

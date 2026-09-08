@@ -92,6 +92,8 @@ class MaintenanceReport(db.Model):
     # Report details
     serial_no = db.Column(db.String(50), nullable=True)
     computer_name = db.Column(db.String(120), nullable=False)
+    desktop_sno = db.Column(db.String(50), nullable=True)
+    desktop_model = db.Column(db.String(120), nullable=True)
     department = db.Column(db.String(120), nullable=False)
     officer_name = db.Column(db.String(120), nullable=False)
     report_time = db.Column(db.Time, nullable=True)

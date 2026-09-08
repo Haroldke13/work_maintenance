@@ -18,6 +18,7 @@
     <div class="container-fluid page-shell">
         <a class="navbar-brand fw-semibold" href="{{ url_for('maintenance_form') }}">PBO Regulatory Authority ICT</a>
         <div class="d-flex gap-2">
+            <a class="btn btn-outline-success btn-sm" href="{{ url_for('scripts') }}">Scripts</a>
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin') }}">Admin</a>
             {% if current_user %}
                 <a class="btn btn-outline-primary btn-sm position-relative" href="{{ url_for('helpdesk.complaints') }}">

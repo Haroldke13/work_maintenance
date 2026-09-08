@@ -1,7 +1,17 @@
 import os
 from datetime import date, datetime, time
 
-from flask import Flask, abort, current_app, flash, redirect, render_template, request, url_for
+from flask import (
+    Flask,
+    Response,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 
 from admin_users import register_admin_user_routes
 from auth import (
@@ -18,6 +28,7 @@ from form_schema import FIELD_SECTIONS, blank_form_data, iter_fields
 from HELP_DESK import register_helpdesk, seed_helpdesk
 from models import HELPDESK_ROLES, MaintenanceReport, User
 from notifications import email_maintenance_report
+from scripts_library import cmd_file, find_script, powershell_file, script_groups
 from seed_data import initial_maintenance_reports
 
 
@@ -116,6 +127,25 @@ def register_routes(app: Flask) -> None:
             "maintenance.html",
             field_sections=FIELD_SECTIONS,
             form_data=blank_form_data(),
+        )
+
+    @app.route("/scripts")
+    def scripts():
+        """Collector scripts an officer runs before filling in the report."""
+        return render_template("scripts.html", script_groups=script_groups())
+
+    @app.route("/scripts/<key>.<ext>")
+    def script_download(key: str, ext: str):
+        """Serve one script as a .ps1 or its self-elevating .cmd wrapper."""
+        script = find_script(key)
+        if script is None or ext not in ("ps1", "cmd"):
+            abort(404)
+
+        body = powershell_file(script) if ext == "ps1" else cmd_file(script)
+        return Response(
+            body,
+            mimetype="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{key}.{ext}"'},
         )
 
     @app.route("/table/<int:report_id>")

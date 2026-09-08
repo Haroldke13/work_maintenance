@@ -6,6 +6,8 @@ def initial_maintenance_reports() -> list[dict]:
     first_report = {
         "serial_no": "NGOB/ICT/104b/0001",
         "computer_name": "NGOB-PC-001",
+        "desktop_sno": "DSK-SN-0001",
+        "desktop_model": "HP ProDesk 400 G7",
         "department": "ICT Department",
         "officer_name": "Sample Officer One",
         "report_time": time(9, 30),
@@ -38,6 +40,8 @@ def initial_maintenance_reports() -> list[dict]:
     second_report = {
         "serial_no": "NGOB/ICT/104b/0002",
         "computer_name": "NGOB-PC-002",
+        "desktop_sno": "DSK-SN-0002",
+        "desktop_model": "Dell OptiPlex 3080",
         "department": "Finance Office",
         "officer_name": "Sample Officer Two",
         "report_time": time(14, 15),
