@@ -148,6 +148,12 @@ def register_routes(app: Flask) -> None:
             headers={"Content-Disposition": f'attachment; filename="{key}.{ext}"'},
         )
 
+    @app.route("/submissions")
+    def submissions():
+        """Every submitted report, newest first, each row opening its detail page."""
+        reports = MaintenanceReport.query.order_by(MaintenanceReport.id.desc()).all()
+        return render_template("submissions.html", reports=reports)
+
     @app.route("/table/<int:report_id>")
     def table(report_id: int):
         report = db.session.get(MaintenanceReport, report_id)

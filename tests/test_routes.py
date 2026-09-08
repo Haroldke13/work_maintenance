@@ -246,3 +246,60 @@ def test_admin_can_set_an_email_when_creating_a_user(client, app):
     with app.app_context():
         created = User.query.filter_by(username="desk_two").one()
         assert created.email == "desk.two@pbora.go.ke"
+
+
+def test_submissions_page_lists_every_report_with_a_detail_button(client):
+    client.post("/maintenance", data=valid_maintenance_form(), follow_redirects=False)
+
+    response = client.get("/submissions")
+
+    assert response.status_code == 200
+    assert b"submissionsTable" in response.data
+    assert b"All Submissions" in response.data
+    assert b"ROUTE-PC" in response.data
+    # The seeded pair plus the report submitted above, each with a View button.
+    assert response.data.count(b"View maintenance report") == 3
+
+
+def test_submissions_detail_button_links_to_the_report_page(client):
+    post_response = client.post(
+        "/maintenance", data=valid_maintenance_form(), follow_redirects=False
+    )
+    report_path = post_response.headers["Location"]
+
+    response = client.get("/submissions")
+
+    assert f'href="{report_path}"'.encode() in response.data
+    assert client.get(report_path).status_code == 200
+
+
+def test_submissions_view_button_is_the_first_column(client):
+    response = client.get("/submissions")
+    body = response.get_data(as_text=True)
+
+    header = body[body.index("<thead>") : body.index("</thead>")]
+    first_row = body[body.index("<tbody>") : body.index("</tr>", body.index("<tbody>"))]
+
+    assert header.index("View") < header.index("ID")
+    assert "btn-view" in first_row.split("</td>")[0]
+
+
+def test_all_records_table_has_a_detail_button_in_the_first_column(client):
+    login_admin(client)
+    client.post("/maintenance", data=valid_maintenance_form(), follow_redirects=False)
+
+    response = client.get("/admin/records")
+    body = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    header = body[body.index("<thead>") : body.index("</thead>")]
+    first_row = body[body.index("<tbody>") : body.index("</tr>", body.index("<tbody>"))]
+
+    assert header.index("View") < header.index("ID")
+    assert "btn-view" in first_row.split("</td>")[0]
+
+
+def test_submissions_page_is_reachable_from_the_form(client):
+    response = client.get("/maintenance")
+
+    assert b'href="/submissions"' in response.data
