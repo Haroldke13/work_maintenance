@@ -52,6 +52,23 @@ def admin_required(view):
     return wrapped
 
 
+def manager_required(view):
+    """ICT managers — and the system admin — may edit a submitted report."""
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            flash("Sign in as an ICT manager to edit a report.", "warning")
+            return redirect(url_for("login", next=request.full_path))
+        if not user.is_manager:
+            flash("Only an ICT manager may edit a submitted report.", "danger")
+            return redirect(url_for("submissions"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
 def signed_in_required(view):
     """Any account on the platform — role is checked separately where it matters."""
 

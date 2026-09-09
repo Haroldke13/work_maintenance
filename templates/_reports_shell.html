@@ -53,6 +53,7 @@
                     {% if complaints_open %}<span class="visually-hidden">{{ complaints_open }} open</span>{% endif %}
                 </a>
             {% endif %}
+            <a class="btn btn-outline-info btn-sm" href="{{ url_for('computer_register') }}">Computer Register</a>
             <a class="btn btn-outline-success btn-sm" href="{{ url_for('scripts') }}">Scripts</a>
             <a class="btn btn-danger btn-sm" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem</a>
             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin') }}">Admin</a>

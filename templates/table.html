@@ -8,6 +8,8 @@
         .summary-item { border-left: 3px solid #0d6efd; padding-left: .75rem; }
         .summary-item .label { font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
         .summary-item .value { font-weight: 600; color: #0f172a; }
+        /* Drawn signatures are stored as PNGs; keep them legible but contained. */
+        .signature-image { max-height: 5rem; max-width: 100%; background: #fff; border-radius: .25rem; }
 {% endblock %}
 
 {% block content %}
@@ -17,10 +19,18 @@
         <p class="text-secondary mb-0">
             Submitted {{ report.submitted_at.strftime('%Y-%m-%d %H:%M') }} UTC
             {%- if report.submitted_by_username %} by {{ report.submitted_by_username }}{% endif %}.
+            {% if report.was_edited %}
+                <span class="badge text-bg-warning align-middle ms-1">Edited</span>
+                {{ report.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC
+                {%- if report.updated_by_username %} by {{ report.updated_by_username }}{% endif %}.
+            {% endif %}
         </p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" href="{{ url_for('submissions') }}">&larr; All Submissions</a>
+        {% if current_user and current_user.is_manager %}
+            <a class="btn btn-warning" href="{{ url_for('edit_report', report_id=report.id) }}">Edit Report</a>
+        {% endif %}
         <a class="btn btn-primary" href="{{ url_for('maintenance_form') }}">New Report</a>
     </div>
 </div>
@@ -29,11 +39,11 @@
     <div class="card-body p-4">
         <div class="row g-4">
             {% set summary = [
-                ('CPU Model', report.computer_name),
+                ('Chassis Model (BIOS)', report.computer_name),
                 ('Department', report.department),
-                ('Officer', report.officer_name),
+                ('Officer Owning Computer', report.officer_name),
                 ('Report Date', report.report_date),
-                ('CPU SNo', report.serial_no),
+                ('Chassis SNo (BIOS)', report.serial_no),
                 ('Desktop Model', report.desktop_model),
             ] %}
             {% for label, value in summary %}
@@ -45,6 +55,22 @@
                 </div>
             {% endfor %}
         </div>
+
+        {% if report.asset %}
+            <hr class="my-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+                <div>
+                    <div class="label text-uppercase small text-secondary">Register entry</div>
+                    <div class="fw-semibold">{{ report.asset.label }}</div>
+                    <div class="text-secondary small">
+                        {{ report.asset.responsible_officer|display_value }}
+                        {%- if report.asset.location %} · {{ report.asset.location }}{% endif %}
+                        {%- if report.asset.tag_numbers %} · tag {{ report.asset.tag_numbers }}{% endif %}
+                    </div>
+                </div>
+                <a class="btn btn-outline-info btn-sm" href="{{ url_for('computer_register') }}">Computer Register</a>
+            </div>
+        {% endif %}
     </div>
 </div>
 
@@ -63,10 +89,17 @@
                 <tbody>
                 {% for section in field_sections %}
                     {% for field in section.fields %}
+                        {% set value = report.value_for(field.name) %}
                         <tr>
                             <td><span class="badge text-bg-secondary">{{ section.title }}</span></td>
                             <td class="fw-semibold">{{ field.label }}</td>
-                            <td class="cell-value">{{ report.value_for(field.name)|display_value }}</td>
+                            <td class="cell-value">
+                                {%- if value|is_signature -%}
+                                    <img class="signature-image" src="{{ value }}" alt="{{ field.label }}">
+                                {%- else -%}
+                                    {{ value|display_value }}
+                                {%- endif -%}
+                            </td>
                         </tr>
                     {% endfor %}
                 {% endfor %}

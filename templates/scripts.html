@@ -27,6 +27,7 @@
                     <span class="badge rounded-pill text-bg-danger">{{ complaints_total }}</span>
                 </a>
             {% endif %}
+            <a class="btn btn-outline-info btn-sm" href="{{ url_for('computer_register') }}">Computer Register</a>
             <a class="btn btn-primary btn-sm" href="{{ url_for('scripts') }}">Scripts</a>
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('maintenance_form') }}">Maintenance Form</a>
             <a class="btn btn-danger btn-sm" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem</a>

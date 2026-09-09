@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 
 from flask import (
     Flask,
@@ -7,13 +7,17 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
     url_for,
 )
 
+from sqlalchemy import case, or_
+
 from admin_users import register_admin_user_routes
+from asset_register import search_assets, seed_computer_assets
 from auth import (
     admin_required,
     current_admin,
@@ -21,12 +25,19 @@ from auth import (
     landing_page_for,
     login_user,
     logout_user,
+    manager_required,
 )
 from config import Config
 from extensions import db, migrate, socketio
-from form_schema import FIELD_SECTIONS, blank_form_data, iter_fields
+from form_schema import (
+    FIELD_SECTIONS,
+    SIGNATURE_MAX_LENGTH,
+    blank_form_data,
+    is_signature_data_url,
+    iter_fields,
+)
 from HELP_DESK import register_helpdesk, seed_helpdesk
-from models import HELPDESK_ROLES, MaintenanceReport, User
+from models import HELPDESK_ROLES, ComputerAsset, MaintenanceReport, User
 from notifications import email_maintenance_report
 from scripts_library import cmd_file, find_script, powershell_file, script_groups
 from seed_data import initial_maintenance_reports
@@ -67,6 +78,11 @@ def register_template_filters(app: Flask) -> None:
             total = open_count = 0
 
         return {"current_user": user, "complaints_total": total, "complaints_open": open_count}
+
+    @app.template_filter("is_signature")
+    def is_signature(value):
+        """A drawn signature renders as an image; anything else as plain text."""
+        return is_signature_data_url(value)
 
     @app.template_filter("display_value")
     def display_value(value):
@@ -110,24 +126,84 @@ def register_routes(app: Flask) -> None:
             if errors:
                 for error in errors:
                     flash(error, "danger")
-                return render_template(
-                    "maintenance.html",
-                    field_sections=FIELD_SECTIONS,
-                    form_data=form_data,
+                return render_maintenance_form(
+                    form_data, asset=resolve_asset(request.form)
                 )
 
             report = MaintenanceReport(**coerce_form_data(form_data))
+            report.asset = resolve_asset(request.form)
+            user = current_user()
+            if user is not None:
+                report.submitted_by_username = user.username
             db.session.add(report)
             db.session.commit()
             email_maintenance_report(report)
             flash("Computer maintenance report saved.", "success")
             return redirect(url_for("table", report_id=report.id))
 
-        return render_template(
-            "maintenance.html",
-            field_sections=FIELD_SECTIONS,
-            form_data=blank_form_data(),
+        form_data, asset = form_data_for_new_report(request.args.get("asset"))
+        return render_maintenance_form(form_data, asset=asset, prefilled=asset is not None)
+
+    @app.route("/maintenance/<int:report_id>/edit", methods=["GET", "POST"])
+    @manager_required
+    def edit_report(report_id: int):
+        """An ICT manager corrects a report that has already been submitted."""
+        report = db.session.get(MaintenanceReport, report_id)
+        if report is None:
+            abort(404)
+
+        if request.method == "POST":
+            form_data = collect_form_data(request.form)
+            errors = validate_form_data(form_data)
+            if errors:
+                for error in errors:
+                    flash(error, "danger")
+                return render_maintenance_form(
+                    form_data, report=report, asset=resolve_asset(request.form)
+                )
+
+            for name, value in coerce_form_data(form_data).items():
+                setattr(report, name, value)
+            report.asset = resolve_asset(request.form)
+            report.updated_at = datetime.now(timezone.utc)
+            report.updated_by_username = current_user().username
+            db.session.commit()
+            flash(f"Maintenance report #{report.id} updated.", "success")
+            return redirect(url_for("table", report_id=report.id))
+
+        return render_maintenance_form(
+            report_form_data(report), report=report, asset=report.asset
         )
+
+    @app.route("/assets")
+    def computer_register():
+        """The register an officer browses: serial, model, and who holds it.
+
+        Clicking an officer opens the maintenance form already filled in for
+        that machine.
+        """
+        # Rows the officer can actually act on lead; the register's unassigned
+        # lines (shared phones, spare gear) still appear, at the end.
+        unassigned = case(
+            (
+                or_(
+                    ComputerAsset.responsible_officer.is_(None),
+                    ComputerAsset.responsible_officer == "",
+                ),
+                1,
+            ),
+            else_=0,
+        )
+        assets = ComputerAsset.query.order_by(
+            unassigned, ComputerAsset.responsible_officer, ComputerAsset.serial_no
+        ).all()
+        return render_template("register.html", assets=assets)
+
+    @app.route("/assets/lookup")
+    def asset_lookup():
+        """Serial-number suggestions for the maintenance form's dropdown."""
+        matches = search_assets(request.args.get("q", ""))
+        return jsonify([asset.as_suggestion() for asset in matches])
 
     @app.route("/scripts")
     def scripts():
@@ -201,7 +277,15 @@ def register_routes(app: Flask) -> None:
             helpdesk_count=User.query.filter(User.helpdesk_role.isnot(None)).count(),
             default_user_password=current_default_user_password(),
             reports_count=MaintenanceReport.query.count(),
+            assets_count=ComputerAsset.query.count(),
         )
+
+    @app.route("/admin/assets")
+    @admin_required
+    def asset_register_page():
+        """The ICT Computer Register as it stands in the database."""
+        assets = ComputerAsset.query.order_by(ComputerAsset.id.asc()).all()
+        return render_template("assets.html", assets=assets)
 
     @app.route("/admin/records")
     @admin_required
@@ -214,11 +298,99 @@ def register_routes(app: Flask) -> None:
         )
 
 
+def render_maintenance_form(
+    form_data: dict,
+    report: MaintenanceReport | None = None,
+    asset: ComputerAsset | None = None,
+    prefilled: bool = False,
+):
+    """The one form template: a new report, a prefilled one, or a manager's edit.
+
+    ``asset`` is the register line the report is tied to — it rides along in a
+    hidden field so the link survives the post. ``prefilled`` says the form was
+    just opened from the register, which is the only time that is announced.
+    """
+    return render_template(
+        "maintenance.html",
+        field_sections=FIELD_SECTIONS,
+        form_data=form_data,
+        report=report,
+        asset=asset,
+        prefilled=prefilled,
+    )
+
+
+def form_data_for_new_report(asset_id: str | None) -> tuple[dict, ComputerAsset | None]:
+    """A blank form, or one already filled in from a register line.
+
+    Only the three columns the register is the authority on are filled: the
+    serial number, the model, and the officer the machine belongs to.
+    """
+    blank = blank_form_data()
+    if not asset_id or not asset_id.isdigit():
+        return blank, None
+
+    asset = db.session.get(ComputerAsset, int(asset_id))
+    if asset is None:
+        return blank, None
+
+    blank["serial_no"] = asset.serial_no or ""
+    blank["computer_name"] = asset.make_model or ""
+    blank["officer_name"] = asset.responsible_officer or ""
+    return blank, asset
+
+
+def resolve_asset(submitted_form) -> ComputerAsset | None:
+    """The register line a submitted report belongs to.
+
+    The form carries the id when the report was started from the register or
+    from the serial-number dropdown. Otherwise the serial number is matched
+    against the register, so a typed serial still links up.
+    """
+    asset_id = (submitted_form.get("asset_id") or "").strip()
+    if asset_id.isdigit():
+        asset = db.session.get(ComputerAsset, int(asset_id))
+        if asset is not None:
+            return asset
+
+    serial = (submitted_form.get("serial_no") or "").strip()
+    if not serial:
+        return None
+
+    return (
+        ComputerAsset.query.filter(
+            db.func.upper(db.func.trim(ComputerAsset.serial_no)) == serial.upper()
+        )
+        .order_by(ComputerAsset.id)
+        .first()
+    )
+
+
 def collect_form_data(submitted_form) -> dict:
     """Read the posted form into raw strings so an invalid post can be re-rendered."""
     return {
         field["name"]: submitted_form.get(field["name"], "").strip() for field in iter_fields()
     }
+
+
+def report_form_data(report: MaintenanceReport) -> dict:
+    """A stored report back as the strings the form inputs expect."""
+    form_data = {}
+    for field in iter_fields():
+        value = report.value_for(field["name"])
+        field_type = field["type"]
+
+        if value is None:
+            form_data[field["name"]] = ""
+        elif field_type == "yesno":
+            form_data[field["name"]] = "Yes" if value else "No"
+        elif field_type == "date":
+            form_data[field["name"]] = value.strftime("%Y-%m-%d")
+        elif field_type == "time":
+            form_data[field["name"]] = value.strftime("%H:%M")
+        else:
+            form_data[field["name"]] = str(value)
+    return form_data
 
 
 def validate_form_data(form_data: dict) -> list[str]:
@@ -238,6 +410,13 @@ def validate_form_data(form_data: dict) -> list[str]:
             errors.append(f"{field['label']} must be a valid time (HH:MM).")
         elif field["type"] == "yesno" and value not in ("Yes", "No"):
             errors.append(f"{field['label']} must be Yes or No.")
+        elif field["type"] == "signature":
+            # The pad posts a PNG data URL; reject anything else so the value is
+            # always safe to put straight into an <img src>.
+            if not is_signature_data_url(value):
+                errors.append(f"{field['label']} must be drawn on the signature pad.")
+            elif len(value) > SIGNATURE_MAX_LENGTH:
+                errors.append(f"{field['label']} is too large; sign again.")
     return errors
 
 
@@ -289,6 +468,7 @@ def seed_database(app: Flask) -> None:
     with app.app_context():
         seed_accounts(app)
         seed_maintenance_reports()
+        seed_computer_assets()
         db.session.commit()
         seed_helpdesk(app)
 

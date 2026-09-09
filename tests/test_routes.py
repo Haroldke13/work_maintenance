@@ -3,9 +3,11 @@ from datetime import date, time
 from conftest import create_user, sign_in
 
 from models import MaintenanceReport, User
+from seed_data import sample_signature
 
 
 def valid_maintenance_form():
+    """A complete post, with the three signatures as the pad's PNG data URLs."""
     return {
         "serial_no": "NGOB/ICT/104b/9001",
         "computer_name": "ROUTE-PC",
@@ -28,13 +30,13 @@ def valid_maintenance_form():
         "free_disk_space": "118 GB",
         "other_observations": "No further issues.",
         "officer_sign_name": "Route Coverage Officer",
-        "officer_signature": "R. Officer",
+        "officer_signature": sample_signature(0.3),
         "officer_sign_date": "2026-09-01",
         "ict_assigned_officer_name": "jonyango",
-        "ict_assigned_officer_signature": "J. Onyango",
+        "ict_assigned_officer_signature": sample_signature(0.9),
         "ict_assigned_officer_sign_date": "2026-09-01",
         "ict_manager_name": "ICT Manager",
-        "ict_manager_signature": "I. Manager",
+        "ict_manager_signature": sample_signature(1.6),
         "ict_manager_sign_date": "2026-09-02",
     }
 

@@ -12,6 +12,7 @@
     <div class="d-flex gap-2">
         <a class="btn btn-success" href="{{ url_for('admin_user_new') }}">Add User</a>
         <a class="btn btn-primary" href="{{ url_for('all_records') }}">All Reports ({{ reports_count }})</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('asset_register_page') }}">Asset Register ({{ assets_count }})</a>
     </div>
 </div>
 
@@ -21,9 +22,10 @@
         (admin_count, 'Administrators', 'danger', url_for('admin_users', rights='admin')),
         (helpdesk_count, 'Help desk staff', 'success', url_for('admin_users', rights='helpdesk')),
         (reports_count, 'Maintenance reports', 'secondary', url_for('all_records')),
+        (assets_count, 'Registered computers', 'info', url_for('asset_register_page')),
     ] %}
     {% for value, label, tone, link in tiles %}
-        <div class="col-6 col-lg-3">
+        <div class="col-6 col-lg-3 col-xl-2">
             <a class="card panel h-100 text-decoration-none" href="{{ link }}">
                 <div class="card-body py-3">
                     <div class="stat-value text-{{ tone }}">{{ value }}</div>

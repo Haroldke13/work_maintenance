@@ -23,13 +23,16 @@
                 <thead>
                 <tr>
                     <th class="text-center" style="width: 6rem;">View</th>
+                    {% if current_user and current_user.is_manager %}
+                        <th class="text-center" style="width: 6rem;">Edit</th>
+                    {% endif %}
                     <th style="width: 5rem;">ID</th>
                     <th>Date</th>
-                    <th>CPU Model</th>
-                    <th>CPU SNo</th>
+                    <th>Chassis Model (BIOS)</th>
+                    <th>Chassis SNo (BIOS)</th>
                     <th>Desktop Model</th>
                     <th>Department</th>
-                    <th>Officer</th>
+                    <th>Officer Owning Computer</th>
                     <th>Submitted</th>
                 </tr>
                 </thead>
@@ -46,6 +49,13 @@
                                 </svg>View
                             </a>
                         </td>
+                        {% if current_user and current_user.is_manager %}
+                            <td class="text-center">
+                                <a class="btn btn-sm btn-warning btn-view"
+                                   href="{{ url_for('edit_report', report_id=report.id) }}"
+                                   aria-label="Edit maintenance report {{ report.id }}">Edit</a>
+                            </td>
+                        {% endif %}
                         <td class="fw-semibold">{{ report.id }}</td>
                         <td data-order="{{ report.report_date.isoformat() if report.report_date else '' }}">
                             {{ report.report_date|display_value }}
@@ -73,10 +83,14 @@
         $('#submissionsTable').DataTable($.extend({}, window.DATATABLE_DEFAULTS, {
             pageLength: 25,
             lengthMenu: [[10, 25, 50, -1], [10, 25, 50, 'All']],
-            // Sort newest first; the View column holds a button, so it neither
-            // sorts nor takes part in the search.
-            order: [[1, 'desc']],
-            columnDefs: [{ targets: 0, orderable: false, searchable: false }]
+            // Sort newest first; the button columns neither sort nor take part
+            // in the search.
+            order: [[{{ 2 if current_user and current_user.is_manager else 1 }}, 'desc']],
+            columnDefs: [{
+                targets: {{ '[0, 1]' if current_user and current_user.is_manager else '[0]' }},
+                orderable: false,
+                searchable: false
+            }]
         }));
     });
 </script>

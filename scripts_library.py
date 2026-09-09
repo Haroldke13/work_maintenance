@@ -70,57 +70,100 @@ def _report(title: str, body: str) -> str:
 MAINTENANCE_SCRIPTS = [
     # -- Report details ----------------------------------------------------
     {
-        "key": "cpu-serial-number",
-        "title": "CPU SNo",
+        "key": "chassis-serial-number",
+        "title": "Chassis SNo from BIOS",
         "group": "Report Details",
         "field": "serial_no",
-        "summary": "Processor ID of every installed CPU.",
+        "summary": "Chassis serial number as the BIOS reports it.",
         "body": """\
-Get-CimInstance Win32_Processor | ForEach-Object {
-    "Processor ID : $($_.ProcessorId)"
-    "Socket       : $($_.SocketDesignation)"
-}""",
+$bios = Get-CimInstance Win32_BIOS
+$enclosure = Get-CimInstance Win32_SystemEnclosure
+$product = Get-CimInstance Win32_ComputerSystemProduct
+
+"BIOS serial number  : $($bios.SerialNumber)"
+"Enclosure serial    : $($enclosure.SerialNumber)"
+"Asset tag           : $($enclosure.SMBIOSAssetTag)"
+"UUID                : $($product.UUID)"
+"BIOS version        : $($bios.SMBIOSBIOSVersion) ($($bios.Manufacturer))"
+"Computer name       : $env:COMPUTERNAME"
+
+""
+"Record the BIOS serial number above as the chassis SNo."
+""",
     },
     {
-        "key": "cpu-model",
-        "title": "CPU model",
+        "key": "chassis-model",
+        "title": "Chassis Model from BIOS",
         "group": "Report Details",
         "field": "computer_name",
-        "summary": "Processor name, cores, and clock speed.",
+        "summary": "Make and model held in the BIOS, e.g. HP ProBook G5.",
         "body": """\
-Get-CimInstance Win32_Processor | ForEach-Object {
-    "Model        : $($_.Name.Trim())"
-    "Manufacturer : $($_.Manufacturer)"
-    "Cores        : $($_.NumberOfCores) cores / $($_.NumberOfLogicalProcessors) logical"
-    "Clock speed  : $($_.MaxClockSpeed) MHz"
-}""",
+$system = Get-CimInstance Win32_ComputerSystem
+$product = Get-CimInstance Win32_ComputerSystemProduct
+$enclosure = Get-CimInstance Win32_SystemEnclosure
+
+$chassisNames = @{
+    3 = 'Desktop'; 4 = 'Low profile desktop'; 6 = 'Mini tower'; 7 = 'Tower'
+    8 = 'Portable'; 9 = 'Laptop'; 10 = 'Notebook'; 13 = 'All in one'
+    23 = 'Rack mount'; 30 = 'Tablet'; 31 = 'Convertible'; 32 = 'Detachable'
+}
+$chassisType = [int]($enclosure.ChassisTypes | Select-Object -First 1)
+$chassisLabel = $chassisNames[$chassisType]
+if (-not $chassisLabel) { $chassisLabel = "Type $chassisType" }
+
+"Manufacturer    : $($system.Manufacturer)"
+"Model           : $($system.Model)"
+"Product name    : $($product.Name)"
+"Product version : $($product.Version)"
+"System family   : $($system.SystemFamily)"
+"Chassis type    : $chassisLabel"
+
+""
+"Record the manufacturer and model above, e.g. HP ProBook 640 G5."
+""",
     },
     {
         "key": "desktop-serial-number",
         "title": "Desktop SNo",
         "group": "Report Details",
         "field": "desktop_sno",
-        "summary": "Chassis serial number from the BIOS.",
+        "summary": "Serial number of the desktop unit, to check against its sticker.",
         "body": """\
-$bios = Get-CimInstance Win32_BIOS
-$system = Get-CimInstance Win32_ComputerSystem
-"Serial number : $($bios.SerialNumber)"
-"Asset tag     : $((Get-CimInstance Win32_SystemEnclosure).SMBIOSAssetTag)"
-"Computer name : $($system.Name)\"""",
+$product = Get-CimInstance Win32_ComputerSystemProduct
+$enclosure = Get-CimInstance Win32_SystemEnclosure
+$baseboard = Get-CimInstance Win32_BaseBoard
+
+"Identifying number : $($product.IdentifyingNumber)"
+"Enclosure serial   : $($enclosure.SerialNumber)"
+"Baseboard serial   : $($baseboard.SerialNumber)"
+"Asset tag          : $($enclosure.SMBIOSAssetTag)"
+"Computer name      : $env:COMPUTERNAME"
+
+""
+"Check these against the serial number printed on the desktop unit itself,"
+"and record the number on the sticker."
+""",
     },
     {
         "key": "desktop-model",
         "title": "Desktop Model",
         "group": "Report Details",
         "field": "desktop_model",
-        "summary": "Make, model, and installed memory of the machine.",
+        "summary": "Make, model, memory, and OS of the desktop, e.g. HP ProDesk 400 G7.",
         "body": """\
 $system = Get-CimInstance Win32_ComputerSystem
+$product = Get-CimInstance Win32_ComputerSystemProduct
+
 "Manufacturer : $($system.Manufacturer)"
 "Model        : $($system.Model)"
+"Product name : $($product.Name)"
 "System type  : $($system.SystemType)"
 "Memory       : $([math]::Round($system.TotalPhysicalMemory / 1GB, 1)) GB"
-"OS           : $((Get-CimInstance Win32_OperatingSystem).Caption)\"""",
+"OS           : $((Get-CimInstance Win32_OperatingSystem).Caption)"
+
+""
+"Record the manufacturer and model above, e.g. HP ProDesk 400 G7."
+""",
     },
     # -- Services ----------------------------------------------------------
     {

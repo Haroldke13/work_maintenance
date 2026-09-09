@@ -2,7 +2,7 @@
 
 from flask import url_for
 
-from form_schema import FIELD_SECTIONS
+from form_schema import FIELD_SECTIONS, is_signature_data_url
 from mailer import best_effort, send_email
 from models import MaintenanceReport
 
@@ -20,10 +20,10 @@ def _body(report: MaintenanceReport) -> str:
     lines = [
         "A Computer Maintenance Report (NGOB/ICT/104b) has been submitted.",
         "",
-        f"Computer:   {report.computer_name}",
-        f"Department: {report.department}",
-        f"Officer:    {report.officer_name}",
-        f"Date:       {report.report_date:%Y-%m-%d}",
+        f"Chassis model: {report.computer_name}",
+        f"Department:    {report.department}",
+        f"Officer:       {report.officer_name}",
+        f"Date:          {report.report_date:%Y-%m-%d}",
         "",
     ]
 
@@ -42,6 +42,10 @@ def _body(report: MaintenanceReport) -> str:
 
 
 def _render(value) -> str:
+    # A drawn signature is a PNG data URL; the email says it is there rather
+    # than carrying kilobytes of base64.
+    if is_signature_data_url(value):
+        return "(signed)"
     if value is True:
         return "Yes"
     if value is False:

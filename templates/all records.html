@@ -9,6 +9,8 @@
         /* Under scrollX the header is a separate table; keep its labels on one
            line and centred so it does not tower over the rows. */
         table.dataTable thead th { white-space: nowrap; vertical-align: middle; }
+        /* A drawn signature is a PNG; keep it to the height of a row. */
+        .signature-image { max-height: 2.5rem; background: #fff; border-radius: .25rem; }
 {% endblock %}
 
 {% block content %}
@@ -60,7 +62,14 @@
                     </td>
                     {% for section in field_sections %}
                         {% for field in section.fields %}
-                            <td>{{ report.value_for(field.name)|display_value }}</td>
+                            {% set value = report.value_for(field.name) %}
+                            <td>
+                                {%- if value|is_signature -%}
+                                    <img class="signature-image" src="{{ value }}" alt="{{ field.label }}">
+                                {%- else -%}
+                                    {{ value|display_value }}
+                                {%- endif -%}
+                            </td>
                         {% endfor %}
                     {% endfor %}
                 </tr>

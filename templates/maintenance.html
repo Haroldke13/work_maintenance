@@ -1,9 +1,11 @@
+{# The one maintenance form: a new NGOB/ICT/104b report, or an ICT manager
+   editing one that has already been submitted (`report` is set in that case). #}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Computer Maintenance Report (NGOB/ICT/104b)</title>
+    <title>{% if report %}Edit Maintenance Report #{{ report.id }}{% else %}Computer Maintenance Report (NGOB/ICT/104b){% endif %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background: #f5f7fb; }
@@ -12,6 +14,40 @@
         .section-title { color: #0f172a; }
         .yesno-group { min-height: 2.6rem; display: flex; align-items: center; gap: 1.25rem; }
         textarea { min-height: 96px; }
+
+        /* Signature pad: a ruled box the officer signs in, sized in CSS pixels
+           so the canvas backing store can be scaled to the device ratio. */
+        .signature-pad canvas {
+            display: block; width: 100%; height: 150px;
+            background: #fff; border: 1px solid #dee2e6; border-radius: .5rem;
+            cursor: crosshair; touch-action: none;
+        }
+        .signature-pad .signature-baseline {
+            position: absolute; left: 1.5rem; right: 1.5rem; bottom: 2.25rem;
+            border-bottom: 1px dashed #cbd5e1; pointer-events: none;
+        }
+        .signature-pad .signature-hint {
+            position: absolute; left: 1.75rem; bottom: 1.4rem;
+            color: #94a3b8; font-size: .8125rem; pointer-events: none;
+        }
+        .signature-pad.is-signed .signature-hint { display: none; }
+
+        /* Serial-number lookup against the ICT Computer Register. */
+        .asset-suggestions {
+            position: absolute; z-index: 1060; left: 0; right: 0; top: 100%;
+            margin: .25rem 0 0; padding: .25rem; list-style: none;
+            background: #fff; border: 1px solid #dee2e6; border-radius: .5rem;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, .12);
+            max-height: 18rem; overflow-y: auto;
+        }
+        .asset-suggestions[hidden] { display: none; }
+        .asset-suggestions li { padding: .4rem .6rem; border-radius: .375rem; cursor: pointer; }
+        .asset-suggestions li:hover,
+        .asset-suggestions li.is-active { background: #e9f2ff; }
+        .asset-suggestions .serial { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .asset-suggestions .meta { display: block; font-size: .8125rem; color: #64748b; }
+        .asset-suggestions .empty { color: #64748b; cursor: default; }
+        .asset-suggestions .empty:hover { background: transparent; }
     </style>
 </head>
 <body>
@@ -27,6 +63,7 @@
                     {% if complaints_open %}<span class="visually-hidden">{{ complaints_open }} open</span>{% endif %}
                 </a>
             {% endif %}
+            <a class="btn btn-outline-info btn-sm" href="{{ url_for('computer_register') }}">Computer Register</a>
             <a class="btn btn-outline-success btn-sm" href="{{ url_for('scripts') }}">Scripts</a>
             <a class="btn btn-danger btn-sm" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem</a>
             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin') }}">Admin</a>
@@ -37,17 +74,51 @@
 <main class="container-fluid page-shell py-4">
     <div class="mb-4">
         <h1 class="h3 fw-bold mb-1">Public Benefit Organizations Regulatory Authority</h1>
-        <p class="h5 text-secondary mb-2">Computer Maintenance Report (NGOB/ICT/104b)</p>
-        <p class="text-secondary mb-0">Complete the report, then submit it to store the record in PostgreSQL.</p>
+        {% if report %}
+            <p class="h5 text-secondary mb-2">Edit Maintenance Report #{{ report.id }} (NGOB/ICT/104b)</p>
+            <p class="text-secondary mb-0">
+                Submitted {{ report.submitted_at.strftime('%Y-%m-%d %H:%M') }} UTC
+                {%- if report.submitted_by_username %} by {{ report.submitted_by_username }}{% endif %}.
+                {% if report.was_edited %}
+                    Last edited {{ report.updated_at.strftime('%Y-%m-%d %H:%M') }} UTC
+                    {%- if report.updated_by_username %} by {{ report.updated_by_username }}{% endif %}.
+                {% endif %}
+            </p>
+        {% else %}
+            <p class="h5 text-secondary mb-2">Computer Maintenance Report (NGOB/ICT/104b)</p>
+            <p class="text-secondary mb-0">Complete the report, then submit it to store the record in PostgreSQL.</p>
+        {% endif %}
     </div>
 
-    <div class="alert alert-light border d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
-        <div>
-            <strong>Having a problem with your computer?</strong>
-            <span class="text-secondary">Raise it with the ICT help desk and track it to resolution.</span>
+    {% if report %}
+        <div class="alert alert-warning border d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
+            <div>
+                <strong>ICT manager edit.</strong>
+                <span>Changes overwrite report #{{ report.id }} and are recorded against your account.</span>
+            </div>
+            <a class="btn btn-outline-secondary" href="{{ url_for('table', report_id=report.id) }}">Cancel</a>
         </div>
-        <a class="btn btn-danger" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem to the Help Desk</a>
-    </div>
+    {% elif prefilled and asset %}
+        <div class="alert alert-info border d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
+            <div>
+                <strong>Filled in from the Computer Register.</strong>
+                <span>
+                    {{ asset.responsible_officer }}&rsquo;s machine
+                    {%- if asset.serial_no %} ({{ asset.serial_no }}){% endif %}.
+                    Check the details against the computer in front of you, then complete the report.
+                </span>
+            </div>
+            <a class="btn btn-outline-secondary" href="{{ url_for('computer_register') }}">Pick another</a>
+        </div>
+    {% else %}
+        <div class="alert alert-light border d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
+            <div>
+                <strong>Having a problem with your computer?</strong>
+                <span class="text-secondary">Raise it with the ICT help desk and track it to resolution.</span>
+            </div>
+            <a class="btn btn-danger" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem to the Help Desk</a>
+        </div>
+    {% endif %}
 
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -59,7 +130,15 @@
         {% endif %}
     {% endwith %}
 
-    <form method="post" action="{{ url_for('maintenance_form') }}" class="needs-validation">
+    <form method="post"
+          action="{% if report %}{{ url_for('edit_report', report_id=report.id) }}{% else %}{{ url_for('maintenance_form') }}{% endif %}"
+          class="needs-validation">
+        {# The register line this report is filed against. Set when the form is
+           opened from the register or a serial is picked from the dropdown; the
+           server also matches on the serial number, so a typed serial links up
+           too. #}
+        <input type="hidden" name="asset_id" value="{{ asset.id if asset else '' }}" data-asset-id>
+
         {% for section in field_sections %}
             <section class="card section-card mb-4">
                 <div class="card-body p-4">
@@ -73,7 +152,7 @@
                     <div class="row g-3">
                         {% for field in section.fields %}
                             {% set value = form_data.get(field.name) %}
-                            {% set column_class = 'col-12' if field.type == 'textarea' or field.get('full_width') else 'col-md-6 col-xl-4' %}
+                            {% set column_class = 'col-12' if field.type == 'textarea' or field.get('full_width') else ('col-md-6 col-xl-4' if field.type != 'signature' else 'col-12 col-xl-4') %}
                             <div class="{{ column_class }}">
                                 <label for="{{ field.name }}" class="form-label fw-semibold">{{ field.label }}</label>
                                 {% if field.type == 'yesno' %}
@@ -84,6 +163,42 @@
                                                 <label class="form-check-label" for="{{ field.name }}_{{ option|lower }}">{{ option }}</label>
                                             </div>
                                         {% endfor %}
+                                    </div>
+                                {% elif field.type == 'signature' %}
+                                    {% set drawn = value if value|is_signature else '' %}
+                                    <div class="signature-pad position-relative{% if drawn %} is-signed{% endif %}" data-signature-pad>
+                                        <canvas id="{{ field.name }}" role="img"
+                                                aria-label="Signature pad for {{ field.label }}"></canvas>
+                                        <span class="signature-baseline"></span>
+                                        <span class="signature-hint">Sign here</span>
+                                        <input type="hidden" name="{{ field.name }}" value="{{ drawn }}" data-signature-value>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center mt-2">
+                                        <span class="small text-secondary" data-signature-status>
+                                            {{ 'Signed.' if drawn else 'Not signed.' }}
+                                        </span>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm"
+                                                data-signature-clear>Clear</button>
+                                    </div>
+                                    {% if value and not drawn %}
+                                        <div class="form-text text-warning-emphasis">
+                                            Previously recorded as text: “{{ value }}”. Sign the pad to replace it —
+                                            saving without a signature clears it.
+                                        </div>
+                                    {% endif %}
+                                {% elif field.name == 'serial_no' %}
+                                    {# Typing three characters of a serial searches
+                                       the register and fills the model and officer. #}
+                                    <div class="position-relative" data-asset-lookup
+                                         data-lookup-url="{{ url_for('asset_lookup') }}">
+                                        <input class="form-control" type="text" name="serial_no" id="serial_no"
+                                               value="{{ value or '' }}" autocomplete="off" role="combobox"
+                                               aria-expanded="false" aria-autocomplete="list"
+                                               aria-controls="serial_no_suggestions"
+                                               placeholder="Type the first 3 characters of the serial number"
+                                               data-asset-input>
+                                        <ul class="asset-suggestions" id="serial_no_suggestions"
+                                            role="listbox" data-asset-results hidden></ul>
                                     </div>
                                 {% elif field.type == 'textarea' %}
                                     <textarea class="form-control" name="{{ field.name }}" id="{{ field.name }}" {% if field.get('required') %}required{% endif %}>{{ value or '' }}</textarea>
@@ -102,12 +217,261 @@
 
         <div class="position-sticky bottom-0 bg-white border rounded-4 shadow-sm p-3 mb-4">
             <div class="d-flex flex-column flex-md-row gap-2 justify-content-between align-items-md-center">
-                <span class="text-secondary">Computer name, department, officer name, and date are required.</span>
-                <button type="submit" class="btn btn-primary btn-lg px-4">Submit Maintenance Report</button>
+                <span class="text-secondary">Chassis model, department, officer owning computer, and date are required.</span>
+                <div class="d-flex gap-2">
+                    {% if report %}
+                        <a class="btn btn-outline-secondary btn-lg px-4" href="{{ url_for('table', report_id=report.id) }}">Cancel</a>
+                        <button type="submit" class="btn btn-primary btn-lg px-4">Save Changes</button>
+                    {% else %}
+                        <button type="submit" class="btn btn-primary btn-lg px-4">Submit Maintenance Report</button>
+                    {% endif %}
+                </div>
             </div>
         </div>
     </form>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Serial-number lookup against the ICT Computer Register. Three characters are
+// enough to search; picking a suggestion fills in the chassis model and the
+// officer who owns the machine, which is what the register records.
+(function () {
+    var MIN_QUERY = 3;
+
+    var container = document.querySelector('[data-asset-lookup]');
+    if (!container) { return; }
+
+    var input = container.querySelector('[data-asset-input]');
+    var results = container.querySelector('[data-asset-results]');
+    var modelField = document.getElementById('computer_name');
+    var officerField = document.getElementById('officer_name');
+    var assetIdField = document.querySelector('[data-asset-id]');
+    var suggestions = [];
+    var activeIndex = -1;
+    var pending = null;
+    var debounce = null;
+
+    function close() {
+        results.hidden = true;
+        results.innerHTML = '';
+        input.setAttribute('aria-expanded', 'false');
+        suggestions = [];
+        activeIndex = -1;
+    }
+
+    function highlight(index) {
+        activeIndex = index;
+        Array.prototype.forEach.call(results.children, function (item, i) {
+            item.classList.toggle('is-active', i === index);
+        });
+    }
+
+    function choose(asset) {
+        input.value = asset.serial_no;
+        if (modelField && asset.make_model) { modelField.value = asset.make_model; }
+        if (officerField && asset.responsible_officer) {
+            officerField.value = asset.responsible_officer;
+        }
+        // Tie the report to this register line, not just to its text.
+        if (assetIdField) { assetIdField.value = asset.id; }
+        close();
+        input.focus();
+    }
+
+    function render(assets) {
+        results.innerHTML = '';
+        suggestions = assets;
+        activeIndex = -1;
+
+        if (!assets.length) {
+            var empty = document.createElement('li');
+            empty.className = 'empty';
+            empty.textContent = 'No asset on the register matches that.';
+            results.appendChild(empty);
+            results.hidden = false;
+            input.setAttribute('aria-expanded', 'true');
+            return;
+        }
+
+        assets.forEach(function (asset, index) {
+            var item = document.createElement('li');
+            item.setAttribute('role', 'option');
+
+            var serial = document.createElement('span');
+            serial.className = 'serial';
+            serial.textContent = asset.serial_no || '(no serial)';
+            item.appendChild(serial);
+
+            var meta = document.createElement('span');
+            meta.className = 'meta';
+            meta.textContent = [asset.make_model, asset.responsible_officer, asset.location]
+                .filter(Boolean).join(' · ');
+            item.appendChild(meta);
+
+            item.addEventListener('mousedown', function (event) {
+                // mousedown, so the pick lands before the input loses focus.
+                event.preventDefault();
+                choose(asset);
+            });
+            item.addEventListener('mouseenter', function () { highlight(index); });
+            results.appendChild(item);
+        });
+
+        results.hidden = false;
+        input.setAttribute('aria-expanded', 'true');
+    }
+
+    function search(term) {
+        var url = container.dataset.lookupUrl + '?q=' + encodeURIComponent(term);
+        var request = fetch(url, { headers: { 'Accept': 'application/json' } });
+        pending = request;
+
+        request
+            .then(function (response) { return response.ok ? response.json() : []; })
+            .then(function (assets) {
+                // Ignore a slow reply that a later keystroke has overtaken.
+                if (pending === request) { render(assets); }
+            })
+            .catch(function () { if (pending === request) { close(); } });
+    }
+
+    input.addEventListener('input', function () {
+        var term = input.value.trim();
+        window.clearTimeout(debounce);
+
+        // Editing the serial by hand drops the link; the server re-matches on
+        // the serial when the report is saved.
+        if (assetIdField) { assetIdField.value = ''; }
+
+        if (term.length < MIN_QUERY) { close(); return; }
+        debounce = window.setTimeout(function () { search(term); }, 150);
+    });
+
+    input.addEventListener('keydown', function (event) {
+        if (results.hidden || !suggestions.length) { return; }
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            highlight((activeIndex + 1) % suggestions.length);
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            highlight((activeIndex - 1 + suggestions.length) % suggestions.length);
+        } else if (event.key === 'Enter' && activeIndex >= 0) {
+            event.preventDefault();
+            choose(suggestions[activeIndex]);
+        } else if (event.key === 'Escape') {
+            close();
+        }
+    });
+
+    input.addEventListener('blur', function () {
+        // Let a click on a suggestion run first.
+        window.setTimeout(close, 120);
+    });
+})();
+
+// Signature pads. Each pad draws onto a canvas and keeps the result in its
+// hidden input as a PNG data URL, which is what the form posts and the server
+// stores. Pointer events cover mouse, pen, and touch in one code path.
+(function () {
+    document.querySelectorAll('[data-signature-pad]').forEach(function (pad) {
+        var canvas = pad.querySelector('canvas');
+        var input = pad.querySelector('[data-signature-value]');
+        var status = pad.parentNode.querySelector('[data-signature-status]');
+        var clearButton = pad.parentNode.querySelector('[data-signature-clear]');
+        var context = canvas.getContext('2d');
+        var drawing = false;
+        var lastPoint = null;
+
+        function style() {
+            context.lineWidth = 2;
+            context.lineCap = 'round';
+            context.lineJoin = 'round';
+            context.strokeStyle = '#0f172a';
+        }
+
+        // The backing store is sized to the device pixel ratio so the stroke is
+        // not blurred on a high-DPI screen; drawing stays in CSS pixels.
+        function fit() {
+            var existing = input.value;
+            var ratio = window.devicePixelRatio || 1;
+            var width = canvas.clientWidth;
+            var height = canvas.clientHeight;
+            if (!width || !height) { return; }
+
+            canvas.width = Math.round(width * ratio);
+            canvas.height = Math.round(height * ratio);
+            context.setTransform(ratio, 0, 0, ratio, 0, 0);
+            style();
+
+            if (existing) {
+                var image = new Image();
+                image.onload = function () { context.drawImage(image, 0, 0, width, height); };
+                image.src = existing;
+            }
+        }
+
+        function pointFrom(event) {
+            var bounds = canvas.getBoundingClientRect();
+            return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+        }
+
+        function markSigned() {
+            input.value = canvas.toDataURL('image/png');
+            pad.classList.add('is-signed');
+            if (status) { status.textContent = 'Signed.'; }
+        }
+
+        function start(event) {
+            drawing = true;
+            lastPoint = pointFrom(event);
+            // A tap with no movement should still leave a mark.
+            context.beginPath();
+            context.moveTo(lastPoint.x, lastPoint.y);
+            context.lineTo(lastPoint.x + 0.1, lastPoint.y);
+            context.stroke();
+            canvas.setPointerCapture(event.pointerId);
+            event.preventDefault();
+        }
+
+        function move(event) {
+            if (!drawing) { return; }
+            var point = pointFrom(event);
+            context.beginPath();
+            context.moveTo(lastPoint.x, lastPoint.y);
+            context.lineTo(point.x, point.y);
+            context.stroke();
+            lastPoint = point;
+            event.preventDefault();
+        }
+
+        function end() {
+            if (!drawing) { return; }
+            drawing = false;
+            lastPoint = null;
+            markSigned();
+        }
+
+        canvas.addEventListener('pointerdown', start);
+        canvas.addEventListener('pointermove', move);
+        canvas.addEventListener('pointerup', end);
+        canvas.addEventListener('pointercancel', end);
+        canvas.addEventListener('pointerleave', end);
+
+        if (clearButton) {
+            clearButton.addEventListener('click', function () {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+                input.value = '';
+                pad.classList.remove('is-signed');
+                if (status) { status.textContent = 'Not signed.'; }
+            });
+        }
+
+        // Resizing rebuilds the backing store, so redraw from the stored PNG.
+        window.addEventListener('resize', fit);
+        fit();
+    });
+})();
+</script>
 </body>
 </html>

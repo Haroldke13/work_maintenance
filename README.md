@@ -8,8 +8,11 @@ This Flask application turns the Public Benefit Organizations Regulatory Authori
 - `table.html`: a Bootstrap DataTable for one submitted report.
 - `admin.html`: admin login and user creation.
 - `templates/all records.html`: admin-only Bootstrap DataTable for every submitted report and every captured field.
+- `templates/register.html`: the Computer Register officers browse, linking each officer to a prefilled report.
+- `templates/assets.html`: admin-only DataTable of the full ICT Computer Register.
 - `form_schema.py`: field metadata (label, type, required) driving the form, validation, and tables.
-- `models.py`: SQLAlchemy models for `users` (one account for the whole system) and `maintenance_reports`.
+- `asset_register.py`: loads `data/ict_computer_register.csv` and searches it for the form's serial-number lookup.
+- `models.py`: SQLAlchemy models for `users` (one account for the whole system), `maintenance_reports`, and `computer_assets`.
 - `auth.py`: the shared sign-in, session, and capability checks.
 - `admin_users.py`: the administrator console — adding accounts and assigning rights.
 - `extensions.py`: the shared `db`, `migrate`, and `socketio` instances.
@@ -26,13 +29,82 @@ This Flask application turns the Public Benefit Organizations Regulatory Authori
 | Services 1-7 | `peripherals_cleaned`, `data_backup_schedule_status`, `windows_firewall_status`, `allowed_firewall_exceptions`, `windows_update_status`, `unneeded_running_services`, `autoruns` |
 | Services 8-14 | `unneeded_software`, `antivirus_auto_protect_status`, `last_antivirus_update`, `windows_user_accounts`, `disk_defragmentation_done`, `free_disk_space`, `other_observations` |
 | Sign-off | `officer_sign_name`, `officer_signature`, `officer_sign_date`, `ict_assigned_officer_name`, `ict_assigned_officer_signature`, `ict_assigned_officer_sign_date`, `ict_manager_name`, `ict_manager_signature`, `ict_manager_sign_date` |
-| Audit | `submitted_at`, `submitted_by_username` |
+| Audit | `submitted_at`, `submitted_by_username`, `updated_at`, `updated_by_username` |
+| Register link | `asset_id` &rarr; `computer_assets.id` |
+
+The four identifying columns say where their value comes from, which is what the form's labels ask for:
+
+| Column | Label on the form | Where the officer reads it |
+| --- | --- | --- |
+| `serial_no` | Chassis SNo (from BIOS) | The BIOS, or the register lookup |
+| `computer_name` | Chassis Model (from BIOS) | The BIOS, e.g. HP ProBook G5 |
+| `desktop_sno` | Desktop SNo (from the desktop) | The sticker on the desktop unit |
+| `desktop_model` | Desktop Model | The desktop, e.g. HP ProDesk 400 G7 |
+| `officer_name` | Officer Owning Computer | The officer the machine is assigned to |
 
 `computer_name`, `department`, `officer_name`, and `report_date` are required. The two Yes/No
 questions (`peripherals_cleaned`, `disk_defragmentation_done`) are nullable booleans, so an
 unanswered question stays `NULL` rather than defaulting to "No". The list questions (firewall
 exceptions, running services, autoruns, unneeded software, user accounts) are `TEXT` columns
 holding one entry per line.
+
+### Signatures
+
+The three sign-off signatures (`officer_signature`, `ict_assigned_officer_signature`,
+`ict_manager_signature`) are drawn on a signature pad — mouse, pen, or finger — and stored as a
+PNG data URL in a `TEXT` column. A signature that was not drawn on the pad is rejected, an unsigned
+report is still accepted, and the record pages render a stored signature as an image. The
+notification email says `(signed)` rather than carrying the base64.
+
+### Editing a submitted report
+
+An ICT manager (`helpdesk_role = manager`, or the administrator) can correct a report after it has
+been submitted at `/maintenance/<id>/edit`. The form comes back prefilled, including the signature
+pads. The edit overwrites the report in place and records who did it in `updated_at` and
+`updated_by_username`; the report page then shows an **Edited** badge. Everyone else gets an Edit
+button they cannot see and a route they cannot reach.
+
+## ICT Computer Register
+
+`computer_assets` holds the organisation's ICT asset register, exported from the assets workbook
+(sheet *ICT Computer Register*) into `data/ict_computer_register.csv` and loaded at seed time.
+
+Typing the first three characters of a serial number into **Chassis SNo** searches the register and
+offers a dropdown of matching machines; picking one fills in the **Chassis Model** and the
+**Officer Owning Computer**. Serial prefixes rank first, and a monitor's serial or an asset tag
+finds its machine too. `/admin/assets` lists the whole register.
+
+### How a report is tied to the register
+
+`maintenance_reports.asset_id` is a foreign key to `computer_assets.id` (`ON DELETE SET NULL`), so a
+report points at the register line it was filed against instead of only copying its text. It is set
+three ways, in order:
+
+1. the hidden `asset_id` the form carries when it was opened from the register or from the
+   serial-number dropdown;
+2. failing that, an exact match of the report's serial number against the register, ignoring case
+   and surrounding spaces;
+3. failing that, `NULL` — a report can still be filed for a machine that is not on the register.
+
+A manager's edit re-resolves the link, so correcting a serial number moves the report to the right
+register line (or clears it). The migration that adds the column backfills existing reports by the
+same serial-number match. Where a serial appears on more than one register line, the lowest id wins,
+so the link is never ambiguous. The report page names the register entry when one is linked.
+
+**Computer Register** in the navbar opens `/assets`: serial number, make & model, and responsible
+officer for every line on the register. Clicking an officer's name opens the maintenance form with
+those three values already filled in, so a report starts from the register rather than from a blank
+page. Lines with no officer recorded (shared phones, spare gear) are listed after the assigned ones.
+
+| Route | Purpose |
+| --- | --- |
+| `/assets` | The register — serial, model, officer; officer names open a prefilled report |
+| `/maintenance?asset=<id>` | The form prefilled from one register line |
+| `/assets/lookup?q=` | JSON suggestions for the dropdown; needs at least 3 characters, returns at most 12 |
+| `/admin/assets` | Admin-only table of every registered asset, all columns |
+
+To refresh the register after the workbook changes, re-export the sheet to
+`data/ict_computer_register.csv` and reload the table.
 
 ## ICT Help Desk
 
@@ -73,12 +145,13 @@ New accounts get `field.123` (`DEFAULT_USER_PASSWORD`). Change these in producti
 
 | Route | Purpose |
 | --- | --- |
-| `/admin` | Console — account and report counts, newest accounts |
+| `/admin` | Console — account, report, and asset counts, newest accounts |
 | `/admin/users` | Every account, searchable and filterable by rights |
 | `/admin/users/new` | Add an account, assigning roles and privileges up front |
 | `/admin/users/<id>` | Change an account's rights, name, email |
 | `/admin/users/<id>/password` | Reset a password (blank = the default) |
 | `/admin/users/<id>/status` | Deactivate or reactivate an account |
+| `/admin/assets` | The ICT Computer Register |
 
 Two rights are assigned independently, both at creation and afterwards:
 
