@@ -14,17 +14,21 @@
 <body>
 <nav class="navbar navbar-expand-lg bg-white border-bottom sticky-top">
     <div class="container-fluid page-shell">
-        <a class="navbar-brand fw-semibold" href="{{ url_for('maintenance_form') }}">PBO Regulatory Authority ICT</a>
+        <a class="navbar-brand fw-semibold" href="{{ url_for('index') }}">PBO Regulatory Authority ICT</a>
         <div class="d-flex gap-2">
+            {# Signed out, the portal itself is closed; only the help desk
+               intake and the signup form are worth offering. #}
             {% if current_user %}
                 <a class="btn btn-outline-primary btn-sm position-relative" href="{{ url_for('helpdesk.complaints') }}">
                     Complaints
                     <span class="badge rounded-pill text-bg-danger">{{ complaints_total }}</span>
                     {% if complaints_open %}<span class="visually-hidden">{{ complaints_open }} open</span>{% endif %}
                 </a>
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('maintenance_form') }}">Maintenance Form</a>
+            {% else %}
+                <a class="btn btn-outline-primary btn-sm" href="{{ url_for('signup') }}">Create Account</a>
             {% endif %}
             <a class="btn btn-danger btn-sm" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem</a>
-            <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('maintenance_form') }}">Maintenance Form</a>
         </div>
     </div>
 </nav>
@@ -62,7 +66,7 @@
                     <form method="post" action="{{ url_for('login') }}" class="vstack gap-3">
                         <input type="hidden" name="next" value="{{ next_url }}">
                         <div>
-                            <label for="username" class="form-label fw-semibold">Username</label>
+                            <label for="username" class="form-label fw-semibold">Username or email</label>
                             <input class="form-control" id="username" name="username" required autocomplete="username">
                         </div>
                         <div>
@@ -71,6 +75,15 @@
                         </div>
                         <button class="btn btn-primary btn-lg" type="submit">Sign In</button>
                     </form>
+
+                    <hr class="my-4">
+                    <p class="mb-1 text-secondary">
+                        No account yet? <a href="{{ url_for('signup') }}">Create one</a>.
+                    </p>
+                    <p class="mb-0 text-secondary">
+                        Waiting on a confirmation email?
+                        <a href="{{ url_for('resend_confirmation') }}">Send a new link</a>.
+                    </p>
                 </div>
             </div>
         </div>

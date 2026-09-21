@@ -5,3 +5,9 @@ __pycache__/
 instance/
 *.db
 .pytest_cache/
+
+# Backups. `.env.bak-*` in particular carries every secret the real .env does,
+# and nothing named *.bak-* belongs in the repository.
+
+*.bak
+*.bak-*

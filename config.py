@@ -42,6 +42,9 @@ class Config:
     # The name recipients see in their inbox, instead of the Gmail account name.
     MAIL_SENDER_NAME = os.getenv("MAIL_SENDER_NAME", "PBORA")
     MAIL_TIMEOUT = int(os.getenv("MAIL_TIMEOUT", "20"))
+    # How long a signup confirmation link stays valid. Long enough to survive a
+    # weekend and a slow mail queue; `/confirm/resend` issues a fresh one.
+    EMAIL_CONFIRM_MAX_AGE = int(os.getenv("EMAIL_CONFIRM_MAX_AGE", str(72 * 3600)))
     MAIL_SUPPRESS_SEND = False
     NOTIFY_EMAILS = [
         address.strip()

@@ -1,5 +1,6 @@
 """Administrator console: adding accounts and assigning rights."""
 
+from accounts import MIN_PASSWORD_LENGTH
 from conftest import create_user, sign_in, sign_out
 
 from extensions import db
@@ -118,7 +119,10 @@ def test_creation_rejects_bad_input(client, app):
     assert b"Username is required" in create_user(client, "").data
     assert b"valid help desk role" in create_user(client, "x1", helpdesk_role="wizard").data
     assert b"valid email address" in create_user(client, "x2", email="not-an-email").data
-    assert b"at least 6 characters" in create_user(client, "x3", password="abc").data
+    assert (
+        f"at least {MIN_PASSWORD_LENGTH} characters".encode()
+        in create_user(client, "x3", password="abc").data
+    )
     assert b"already exists" in create_user(client, "jonyango").data
 
     with app.app_context():
@@ -188,7 +192,7 @@ def test_password_can_be_reset_to_the_default_or_a_new_one(client, app):
 
     short = client.post(f"/admin/users/{user_id}/password", data={"password": "abc"},
                         follow_redirects=True)
-    assert b"at least 6 characters" in short.data
+    assert f"at least {MIN_PASSWORD_LENGTH} characters".encode() in short.data
     assert fetch(app, "forgetful").check_password("brandnewpass")
 
 

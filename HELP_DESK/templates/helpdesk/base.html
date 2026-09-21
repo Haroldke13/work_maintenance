@@ -41,6 +41,7 @@
             <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('maintenance_form') }}">Maintenance Reports</a>
             {% if staff %}
                 <a class="btn btn-outline-primary btn-sm" href="{{ url_for('helpdesk.dashboard') }}">Dashboard</a>
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('change_password') }}">Password</a>
                 <form method="post" action="{{ url_for('logout') }}" class="m-0">
                     <button class="btn btn-outline-danger btn-sm" type="submit">Sign Out</button>
                 </form>

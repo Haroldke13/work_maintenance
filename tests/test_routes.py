@@ -54,6 +54,8 @@ def test_seeded_admin_and_initial_reports(app):
 
 
 def test_index_redirects_to_maintenance(client):
+    sign_in(client)
+
     response = client.get("/")
 
     assert response.status_code == 302
@@ -61,6 +63,8 @@ def test_index_redirects_to_maintenance(client):
 
 
 def test_maintenance_get_renders_form(client):
+    sign_in(client)
+
     response = client.get("/maintenance")
 
     assert response.status_code == 200
@@ -69,6 +73,8 @@ def test_maintenance_get_renders_form(client):
 
 
 def test_maintenance_post_invalid_rerenders_required_errors(client):
+    sign_in(client)
+
     response = client.post("/maintenance", data={}, follow_redirects=True)
 
     assert response.status_code == 200
@@ -76,6 +82,7 @@ def test_maintenance_post_invalid_rerenders_required_errors(client):
 
 
 def test_maintenance_post_rejects_malformed_date(client):
+    sign_in(client)
     form_data = valid_maintenance_form()
     form_data["last_antivirus_update"] = "31-08-2026"
 
@@ -86,6 +93,8 @@ def test_maintenance_post_rejects_malformed_date(client):
 
 
 def test_maintenance_post_valid_creates_typed_report(client, app):
+    sign_in(client)
+
     response = client.post("/maintenance", data=valid_maintenance_form(), follow_redirects=False)
 
     assert response.status_code == 302
@@ -108,6 +117,7 @@ def test_maintenance_post_valid_creates_typed_report(client, app):
 
 
 def test_unanswered_yes_no_question_is_stored_as_null(client, app):
+    sign_in(client)
     form_data = valid_maintenance_form()
     form_data.pop("peripherals_cleaned")
     form_data["computer_name"] = "UNANSWERED-PC"
@@ -121,6 +131,8 @@ def test_unanswered_yes_no_question_is_stored_as_null(client, app):
 
 
 def test_missing_table_report_returns_404(client):
+    sign_in(client)
+
     response = client.get("/table/999999")
 
     assert response.status_code == 404
@@ -232,6 +244,8 @@ def test_static_missing_asset_returns_404(client):
 
 
 def test_maintenance_form_links_to_the_help_desk(client):
+    sign_in(client)
+
     response = client.get("/maintenance")
 
     assert response.status_code == 200
@@ -251,6 +265,7 @@ def test_admin_can_set_an_email_when_creating_a_user(client, app):
 
 
 def test_submissions_page_lists_every_report_with_a_detail_button(client):
+    sign_in(client)
     client.post("/maintenance", data=valid_maintenance_form(), follow_redirects=False)
 
     response = client.get("/submissions")
@@ -264,6 +279,7 @@ def test_submissions_page_lists_every_report_with_a_detail_button(client):
 
 
 def test_submissions_detail_button_links_to_the_report_page(client):
+    sign_in(client)
     post_response = client.post(
         "/maintenance", data=valid_maintenance_form(), follow_redirects=False
     )
@@ -276,6 +292,8 @@ def test_submissions_detail_button_links_to_the_report_page(client):
 
 
 def test_submissions_view_button_is_the_first_column(client):
+    sign_in(client)
+
     response = client.get("/submissions")
     body = response.get_data(as_text=True)
 
@@ -302,6 +320,8 @@ def test_all_records_table_has_a_detail_button_in_the_first_column(client):
 
 
 def test_submissions_page_is_reachable_from_the_form(client):
+    sign_in(client)
+
     response = client.get("/maintenance")
 
     assert b'href="/submissions"' in response.data

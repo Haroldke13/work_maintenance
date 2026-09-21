@@ -41,6 +41,15 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     # Account holders are on the notification list by default.
     receives_notifications = db.Column(db.Boolean, nullable=False, default=True)
+    # Where the account came from, and whether its address has been proved.
+    #
+    # Only a self-registered account has to confirm: nobody vouched for the
+    # address it typed in. An account staff created is vouched for by the
+    # person who created it and handed the password over off-line, so it
+    # signs in straight away. Defaulting to False keeps that true for every
+    # account made in code — seeds, fixtures, the admin console.
+    self_registered = db.Column(db.Boolean, nullable=False, default=False)
+    email_confirmed_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_by = db.Column(db.String(80), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True),
@@ -53,6 +62,18 @@ class User(db.Model):
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    def confirm_email(self) -> None:
+        self.email_confirmed_at = datetime.now(timezone.utc)
+
+    @property
+    def awaiting_email_confirmation(self) -> bool:
+        """Signed up for itself and has not yet clicked the emailed link."""
+        return self.self_registered and self.email_confirmed_at is None
+
+    @property
+    def may_sign_in(self) -> bool:
+        return self.is_active and not self.awaiting_email_confirmation
 
     @property
     def display_name(self) -> str:

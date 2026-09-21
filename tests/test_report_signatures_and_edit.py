@@ -1,11 +1,19 @@
 """Signature pads on the sign-off, and the ICT manager's edit of a submitted report."""
 
-from conftest import sign_in
+import pytest
+
+from conftest import sign_in, sign_out
 from test_routes import valid_maintenance_form
 
 from form_schema import field_label
 from models import MaintenanceReport
 from seed_data import sample_signature
+
+
+@pytest.fixture(autouse=True)
+def signed_in(client):
+    """The portal is gated. These tests are about its pages, not its door."""
+    sign_in(client, "icthelpdesk", "field.123")
 
 
 def submit_report(client, **overrides):
@@ -107,6 +115,8 @@ def test_the_email_names_the_signature_instead_of_carrying_its_base64(client, ou
 
 
 def test_editing_requires_signing_in(client):
+    sign_out(client)
+
     response = client.get("/maintenance/1/edit", follow_redirects=False)
 
     assert response.status_code == 302

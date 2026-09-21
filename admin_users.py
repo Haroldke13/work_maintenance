@@ -11,9 +11,11 @@ administrator cannot lock themselves — or everyone — out of the console.
 
 from flask import flash, redirect, render_template, request, url_for
 
+from accounts import MIN_PASSWORD_LENGTH
 from auth import admin_required, current_admin
 from extensions import db
 from models import HELPDESK_ROLES, MaintenanceReport, User
+from notifications import email_new_account
 
 
 def register_admin_user_routes(app) -> None:
@@ -75,9 +77,13 @@ def register_admin_user_routes(app) -> None:
                     receives_notifications=form_data["receives_notifications"],
                     created_by=current_admin().username,
                 )
+                # `self_registered` stays False: the administrator creating
+                # the account is the one vouching for the address, so there is
+                # no confirmation round trip.
                 user.set_password(form_data["password"] or default_password(app))
                 db.session.add(user)
                 db.session.commit()
+                email_new_account(user, f"created by {current_admin().username}")
                 flash(f"Account {user.username} created.", "success")
                 return redirect(url_for("admin_user_edit", user_id=user.id))
 
@@ -134,8 +140,11 @@ def register_admin_user_routes(app) -> None:
             return redirect(url_for("admin_users"))
 
         password = request.form.get("password", "").strip() or default_password(app)
-        if len(password) < 6:
-            flash("A password must be at least 6 characters.", "danger")
+        if len(password) < MIN_PASSWORD_LENGTH:
+            flash(
+                f"A password must be at least {MIN_PASSWORD_LENGTH} characters.",
+                "danger",
+            )
         else:
             user.set_password(password)
             db.session.commit()
@@ -240,8 +249,8 @@ def validate_user_form(form_data: dict, existing: User | None) -> list[str]:
         errors.append("Choose a valid help desk role.")
 
     password = form_data["password"]
-    if password and len(password) < 6:
-        errors.append("A password must be at least 6 characters.")
+    if password and len(password) < MIN_PASSWORD_LENGTH:
+        errors.append(f"A password must be at least {MIN_PASSWORD_LENGTH} characters.")
 
     return errors
 

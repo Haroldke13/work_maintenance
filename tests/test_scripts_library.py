@@ -3,8 +3,18 @@
 import base64
 import re
 
+import pytest
+
+from conftest import sign_in
+
 from form_schema import field_names
 from scripts_library import MAINTENANCE_SCRIPTS, cmd_file, find_script, powershell_file
+
+
+@pytest.fixture(autouse=True)
+def signed_in(client):
+    """The portal is gated. These tests are about its pages, not its door."""
+    sign_in(client, "icthelpdesk", "field.123")
 
 
 def test_every_script_targets_a_real_form_field():

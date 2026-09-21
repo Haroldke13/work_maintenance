@@ -1,9 +1,19 @@
 """The ICT Computer Register, and the serial-number lookup that prefills the form."""
 
-from conftest import sign_in
+import re
+
+import pytest
+
+from conftest import sign_in, sign_out
 
 from asset_register import MIN_QUERY_LENGTH, read_register, search_assets
 from models import ComputerAsset, MaintenanceReport
+
+
+@pytest.fixture(autouse=True)
+def signed_in(client):
+    """The portal is gated. These tests are about its pages, not its door."""
+    sign_in(client, "icthelpdesk", "field.123")
 
 
 def test_the_register_csv_carries_the_organisations_assets():
@@ -136,7 +146,9 @@ def test_the_admin_dashboard_counts_the_registered_computers(client, app):
 # --- The Computer Register page ----------------------------------------
 
 
-def test_the_register_page_lists_the_three_columns_and_every_row(client, app):
+def test_the_register_page_lists_the_three_columns_and_every_computer(client, app):
+    from asset_register import only_computers
+
     response = client.get("/assets")
     page = response.get_data(as_text=True)
 
@@ -146,15 +158,26 @@ def test_the_register_page_lists_the_three_columns_and_every_row(client, app):
         assert heading in page
 
     with app.app_context():
-        total = ComputerAsset.query.count()
-        assert f"{total} assets" in page
-        # Every register line has a row of its own.
-        body = page[page.index("<tbody>"):page.index("</tbody>")]
-        assert body.count("<tr>") == total
+        # The page starts maintenance reports, so it carries the computers on
+        # the register rather than all of its lines.
+        total = only_computers(ComputerAsset.query).count()
+
+    assert f"{total} assets" in page
+    # Every computer has a row of its own, across all the branch tables.
+    body_rows = sum(
+        chunk.split("</tbody>")[0].count("<tr>")
+        for chunk in page.split("<tbody>")[1:]
+    )
+    assert body_rows == total
 
 
-def test_the_register_page_needs_no_sign_in(client):
-    assert client.get("/assets", follow_redirects=False).status_code == 200
+def test_the_register_page_is_behind_the_sign_in(client):
+    sign_out(client)
+
+    response = client.get("/assets", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert "/login" in response.headers["Location"]
 
 
 def test_an_officer_name_links_to_the_report_form(client, app):
@@ -231,3 +254,198 @@ def test_rows_an_officer_can_act_on_come_first(client):
     last_assigned = max(i for i, row in enumerate(rows) if "officer-link" in row)
 
     assert first_unassigned > last_assigned
+
+
+# --- Only computers reach the page that starts a report ------------------
+
+
+def test_the_register_page_lists_only_computers_and_laptops(client, app):
+    from asset_register import is_computer
+
+    page = client.get("/assets").get_data(as_text=True)
+
+    with app.app_context():
+        computers = [a for a in ComputerAsset.query.all() if is_computer(a.asset_description)]
+        others = [a for a in ComputerAsset.query.all() if not is_computer(a.asset_description)]
+
+    assert computers and others, "the register should hold both"
+    assert f"{len(computers)} assets" in page
+    # The counted total is the sieved one, not the whole register.
+    assert str(len(computers) + len(others)) + " assets" not in page
+
+
+def test_telephones_printers_and_the_air_con_are_sieved_out(client, app):
+    with app.app_context():
+        excluded = (
+            ComputerAsset.query.filter(
+                ComputerAsset.asset_description.in_(
+                    ["TELEPHONE HEADS", "PRINTER/COPIER", "AIR CON", "PAPER SHREDDER"]
+                )
+            )
+            .filter(ComputerAsset.serial_no.isnot(None), ComputerAsset.serial_no != "")
+            .all()
+        )
+        serials = [a.serial_no for a in excluded]
+
+    assert serials, "the register should carry non-computers"
+    page = client.get("/assets").get_data(as_text=True)
+
+    for serial in serials:
+        assert serial not in page, serial
+
+
+def test_both_computer_descriptions_survive_the_sieve(app):
+    from asset_register import only_computers
+
+    with app.app_context():
+        kept = {a.asset_description for a in only_computers(ComputerAsset.query).all()}
+
+    assert kept == {"CPU / Monitor / Keyboard", "LAPTOP COMPUTER"}
+
+
+def test_the_sieve_is_case_and_whitespace_insensitive():
+    from asset_register import is_computer
+
+    assert is_computer("  LAPTOP COMPUTER  ")
+    assert is_computer("cpu / monitor / keyboard")
+    assert is_computer("CPU / Monitor / Keyboard")
+    assert not is_computer("TELEPHONE HEADS")
+    assert not is_computer("")
+    assert not is_computer(None)
+
+
+def test_the_full_register_is_still_there_for_the_administrator(client, app):
+    """Sieving the officer's page must not hide lines from the asset register."""
+    sign_in(client, "jonyango", "field.123")
+
+    page = client.get("/admin/assets").get_data(as_text=True)
+
+    assert "TELEPHONE HEADS" in page
+    with app.app_context():
+        assert ComputerAsset.query.count() == len(read_register())
+
+
+# --- Branches ------------------------------------------------------------
+
+
+def accordion_headings(page: str) -> list[tuple[str, str]]:
+    """The (branch, count) label of every accordion button, in page order."""
+    return [
+        (branch.strip(), count.strip())
+        for branch, count in re.findall(
+            r'aria-controls="branch-\d+">\s*(.*?)\s*<span[^>]*>\s*(.*?)\s*</span>',
+            page,
+            re.S,
+        )
+    ]
+
+
+def test_the_register_is_stratified_into_one_accordion_per_branch(client, app):
+    from asset_register import computers_by_branch
+
+    page = client.get("/assets").get_data(as_text=True)
+
+    with app.app_context():
+        branches = computers_by_branch()
+
+    headings = accordion_headings(page)
+
+    assert len(branches) > 1
+    assert f"{len(branches)} branches" in page
+    assert headings == [
+        (branch, f"{len(assets)} computer{'' if len(assets) == 1 else 's'}")
+        for branch, assets in branches
+    ]
+
+
+def test_nairobi_is_the_first_accordion_and_the_only_one_open(client):
+    page = client.get("/assets").get_data(as_text=True)
+
+    headings = accordion_headings(page)
+
+    assert headings[0][0] == "Nairobi"
+    # Exactly one panel arrives expanded, and it is Nairobi's.
+    assert page.count("accordion-collapse collapse show") == 1
+    assert page.index("collapse show") < page.index("accordion-button collapsed")
+    assert page.count('aria-expanded="true"') == 1
+
+
+def test_a_branch_table_holds_exactly_its_own_machines(client, app):
+    """The rows under a heading are that branch's, not the next one's."""
+    from asset_register import computers_by_branch
+
+    page = client.get("/assets").get_data(as_text=True)
+    panels = page.split('class="accordion-item panel"')[1:]
+
+    with app.app_context():
+        branches = computers_by_branch()
+
+    assert len(panels) == len(branches)
+    for panel, (branch, assets) in zip(panels, branches):
+        rows = panel.split("<tbody>")[1].split("</tbody>")[0]
+        assert rows.count("<tr>") == len(assets), branch
+        for asset in assets:
+            if asset.serial_no:
+                assert asset.serial_no in rows, f"{asset.serial_no} missing from {branch}"
+
+
+def test_every_branch_after_nairobi_is_in_alphabetical_order(app):
+    from asset_register import computers_by_branch
+
+    with app.app_context():
+        names = [branch for branch, _ in computers_by_branch()]
+
+    assert names[0] == "Nairobi"
+    assert names[1:] == sorted(names[1:])
+
+
+def test_each_machine_appears_under_its_own_branch(client, app):
+    from asset_register import branch_of, computers_by_branch
+
+    with app.app_context():
+        for branch, assets in computers_by_branch():
+            for asset in assets:
+                assert branch_of(asset.location) == branch
+
+
+def test_branch_names_are_folded_so_one_office_is_one_accordion():
+    from asset_register import branch_of
+
+    # The workbook spells these two more than one way.
+    assert branch_of("NAKURU") == branch_of("Nakuru") == "Nakuru"
+    assert branch_of("Garisa") == branch_of("Garissa") == "Garissa"
+    assert branch_of("nairobi") == "Nairobi"
+
+
+def test_a_machine_with_no_location_still_gets_a_home():
+    from asset_register import NO_BRANCH, branch_of
+
+    assert branch_of("") == NO_BRANCH
+    assert branch_of(None) == NO_BRANCH
+    assert branch_of("   ") == NO_BRANCH
+
+
+def test_a_branchless_machine_sorts_last(app):
+    from asset_register import NO_BRANCH, _branch_order
+
+    names = ["Nairobi", "Mombasa", NO_BRANCH, "Eldoret"]
+
+    assert sorted(names, key=_branch_order) == ["Nairobi", "Eldoret", "Mombasa", NO_BRANCH]
+
+
+def test_the_branch_totals_add_up_to_the_page_total(client, app):
+    from asset_register import computers_by_branch, only_computers
+
+    with app.app_context():
+        branches = computers_by_branch()
+        assert sum(len(a) for _, a in branches) == only_computers(ComputerAsset.query).count()
+
+
+def test_an_officer_link_still_starts_a_report_from_inside_a_branch(client, app):
+    with app.app_context():
+        asset_id = ComputerAsset.query.filter_by(serial_no="CZ018C7P").one().id
+
+    page = client.get("/assets").get_data(as_text=True)
+
+    assert f'href="/maintenance?asset={asset_id}"' in page
+    assert client.get(f"/maintenance?asset={asset_id}").status_code == 200

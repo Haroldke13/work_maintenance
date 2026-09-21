@@ -1,6 +1,6 @@
 """Every submitted response is emailed to the ICT addresses."""
 
-from conftest import create_user, submit_complaint
+from conftest import create_user, sign_in, submit_complaint
 from test_routes import valid_maintenance_form
 
 from mailer import send_email
@@ -30,6 +30,8 @@ def test_new_complaint_is_emailed_to_both_addresses(client, outbox):
 
 
 def test_maintenance_report_is_emailed_to_both_addresses(client, outbox):
+    sign_in(client)
+    outbox.clear()
     client.post("/maintenance", data=valid_maintenance_form())
 
     assert len(outbox) == 1

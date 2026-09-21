@@ -85,7 +85,8 @@ def test_navbar_shows_complaints_button_with_a_count(client, app):
 
 
 def test_navbar_hides_complaints_button_when_signed_out(client):
-    body = client.get("/maintenance").data.decode()
+    # Signed out, the sign-in page is the only portal page there is to see.
+    body = client.get("/login").data.decode()
 
     assert "/helpdesk/complaints" not in body
     # The public complaint form is still reachable.

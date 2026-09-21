@@ -92,15 +92,28 @@ same serial-number match. Where a serial appears on more than one register line,
 so the link is never ambiguous. The report page names the register entry when one is linked.
 
 **Computer Register** in the navbar opens `/assets`: serial number, make & model, and responsible
-officer for every line on the register. Clicking an officer's name opens the maintenance form with
-those three values already filled in, so a report starts from the register rather than from a blank
-page. Lines with no officer recorded (shared phones, spare gear) are listed after the assigned ones.
+officer. Clicking an officer's name opens the maintenance form with those three values already
+filled in, so a report starts from the register rather than from a blank page. Lines with no officer
+recorded are listed after the assigned ones.
+
+Two things narrow what that page shows, because it exists to *start a maintenance report*:
+
+- **Only computers.** The asset register covers all of ICT's assets, so most of its 210 lines are
+  not machines — telephone heads, printers, switches, a shredder, an air conditioner. The page
+  carries the 85 lines described as `CPU / Monitor / Keyboard` (a desktop set, listed by its parts)
+  or `LAPTOP COMPUTER`; see `COMPUTER_DESCRIPTIONS` in `asset_register.py`. The serial-number
+  lookup behind the form's dropdown is sieved the same way, since it prefills the same report.
+  `/admin/assets` still lists every line.
+- **Grouped by branch**, one accordion per *Current Location*, **Nairobi first** and open on
+  arrival, the rest alphabetical behind it. Branch names are title-cased and `Garisa` is folded
+  into `Garissa`, so one office is never two accordions. A line with no location falls under
+  *No branch recorded*, last.
 
 | Route | Purpose |
 | --- | --- |
-| `/assets` | The register — serial, model, officer; officer names open a prefilled report |
+| `/assets` | The computers on the register, by branch; officer names open a prefilled report |
 | `/maintenance?asset=<id>` | The form prefilled from one register line |
-| `/assets/lookup?q=` | JSON suggestions for the dropdown; needs at least 3 characters, returns at most 12 |
+| `/assets/lookup?q=` | JSON suggestions for the dropdown; computers only, needs at least 3 characters, returns at most 12 |
 | `/admin/assets` | Admin-only table of every registered asset, all columns |
 
 To refresh the register after the workbook changes, re-export the sheet to
@@ -128,6 +141,15 @@ admin area and the ICT help desk. Capability comes from the account, not from a 
 login: `is_admin` opens `/admin`, and `helpdesk_role` (`officer` or `manager`) opens
 `/helpdesk/staff`. Signing in lands you on the area your account is for.
 
+The portal is closed: every page needs an account. The exceptions are the sign-in and
+signup pages and the help desk intake (`/helpdesk/`, `/helpdesk/track`), which stay
+public so a member of staff with a broken computer can report it without one. The list
+lives in `PUBLIC_ENDPOINTS` in `auth.py`, and anything not on it is private — including
+any route added later.
+
+Sign-in accepts a **username or an email address**. A shared address identifies nobody,
+so the two accounts on the shared ICT inbox below sign in by username.
+
 **Every seeded password is `field.123`.**
 
 | Username | Password | Admin | Help desk role | Can close tickets |
@@ -138,6 +160,32 @@ login: `is_admin` opens `/admin`, and `helpdesk_role` (`officer` or `manager`) o
 
 New accounts get `field.123` (`DEFAULT_USER_PASSWORD`). Change these in production via
 `ADMIN_PASSWORD`, `HELPDESK_*_PASSWORD`, and `DEFAULT_USER_PASSWORD`.
+
+### Changing a password
+
+Anyone signed in changes their own at `/account/password` (the **Password** button in the
+navbar): current password, new, confirm. While an account still holds one of the seeded
+defaults the page says so, since a password the whole office was issued proves nothing
+about who is signing in.
+
+An administrator can still reset someone else's from `/admin/users/<id>` — that is for an
+account whose holder cannot sign in at all. Both paths enforce the same minimum,
+`MIN_PASSWORD_LENGTH` in `accounts.py` (8 characters).
+
+### Signing up
+
+`/signup` takes an email address, a password and a confirmation, and mails a signed,
+expiring link to that address; the account cannot sign in until the link is clicked
+(`/confirm/<token>`, lifetime `EMAIL_CONFIRM_MAX_AGE`, 72 hours by default). `/confirm/resend`
+issues a fresh one. A self-registered account gets no rights beyond a signed-in user's —
+an administrator grants `is_admin` or a `helpdesk_role` afterwards.
+
+Only self-registered accounts confirm. An account staff create is vouched for by whoever
+created it, which is what the `self_registered` column records.
+
+Both routes to a new account — signup confirmation and the admin console — email
+`NOTIFY_EMAILS` so ICT knows the account exists. That alert deliberately does not go to
+the wider notification list a maintenance report reaches.
 
 ### Administrator console
 

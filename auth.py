@@ -3,6 +3,11 @@
 A single `users` table backs both the maintenance report admin area and the ICT
 help desk, so ICT staff hold one set of credentials. Capability is read from the
 account: `is_admin` for the admin area, `helpdesk_role` for the help desk.
+
+The portal itself is closed: `register_access_gate` turns every route into a
+signed-in route, and PUBLIC_ENDPOINTS is the short, explicit list of exceptions.
+Gating this way rather than decorator-by-decorator means a route added later is
+private until somebody deliberately names it public here.
 """
 
 from functools import wraps
@@ -15,6 +20,47 @@ from models import User
 
 SESSION_KEY = "user_id"
 
+# The only endpoints reachable without an account.
+#
+# The help desk intake is public by design: a member of staff whose computer
+# has failed reports it, and is given a tracking link, without ever holding an
+# account. Those reporter routes prove ownership with the link's token instead
+# (see HELP_DESK/access.py).
+PUBLIC_ENDPOINTS = frozenset(
+    {
+        "static",
+        "login",
+        "logout",
+        "signup",
+        "confirm_email",
+        "resend_confirmation",
+        "helpdesk.static",
+        "helpdesk.new_ticket",
+        "helpdesk.track_ticket",
+        "helpdesk.view_ticket",
+        "helpdesk.reporter_comment",
+        "helpdesk.reporter_status",
+    }
+)
+
+
+def register_access_gate(app) -> None:
+    """Close the portal: everything but PUBLIC_ENDPOINTS needs an account."""
+
+    @app.before_request
+    def require_signed_in_user():
+        endpoint = request.endpoint
+
+        # No endpoint means no route matched; let it fall through to the 404
+        # rather than answering an unknown URL with a sign-in redirect.
+        if endpoint is None or endpoint in PUBLIC_ENDPOINTS:
+            return None
+        if current_user() is not None:
+            return None
+
+        flash("Sign in to use the ICT portal.", "warning")
+        return redirect(url_for("login", next=request.full_path))
+
 
 def current_user() -> User | None:
     user_id = session.get(SESSION_KEY)
@@ -22,7 +68,9 @@ def current_user() -> User | None:
         return None
 
     user = db.session.get(User, user_id)
-    if user and user.is_active:
+    # Re-checked on every request, not just at sign-in, so deactivating an
+    # account ends the session it already holds.
+    if user and user.may_sign_in:
         return user
     session.pop(SESSION_KEY, None)
     return None

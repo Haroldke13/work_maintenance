@@ -57,6 +57,12 @@
             <a class="btn btn-outline-success btn-sm" href="{{ url_for('scripts') }}">Scripts</a>
             <a class="btn btn-danger btn-sm" href="{{ url_for('helpdesk.new_ticket') }}">Report a Problem</a>
             <a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin') }}">Admin</a>
+            {% if current_user %}
+                <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('change_password') }}">Password</a>
+                <form method="post" action="{{ url_for('logout') }}" class="m-0">
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Sign Out</button>
+                </form>
+            {% endif %}
         </div>
     </div>
 </nav>

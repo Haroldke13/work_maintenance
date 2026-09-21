@@ -1,9 +1,17 @@
 """The foreign key tying a maintenance report to its line on the computer register."""
 
+import pytest
+
 from conftest import sign_in
 from test_routes import valid_maintenance_form
 
 from models import ComputerAsset, MaintenanceReport
+
+
+@pytest.fixture(autouse=True)
+def signed_in(client):
+    """The portal is gated. These tests are about its pages, not its door."""
+    sign_in(client, "icthelpdesk", "field.123")
 
 
 def asset_for(app, serial="CZ018C7P"):

@@ -1,10 +1,43 @@
-"""Email sent when a computer maintenance report is submitted."""
+"""Emails sent when a report is submitted, and when an account is created."""
 
-from flask import url_for
+from flask import current_app, url_for
 
 from form_schema import FIELD_SECTIONS, is_signature_data_url
 from mailer import best_effort, send_email
-from models import MaintenanceReport
+from models import MaintenanceReport, User
+
+
+@best_effort
+def email_new_account(user: User, how: str) -> bool:
+    """Tell ICT that an account now exists. `how` says where it came from.
+
+    Goes to the configured ICT addresses only — the administrator and the
+    shared inbox. Not to the account holder, who has their own mail about it,
+    and deliberately not to the wider notification list a report goes to: who
+    holds an account is ICT's business, not every user's.
+
+    Self-service signup is the case that matters: nobody on staff was
+    involved, so this is the only trace of it that reaches a person.
+    """
+    subject = f"[ICT Portal] New account: {user.username}"
+    body = "\n".join(
+        [
+            "An account has been created on the PBO Regulatory Authority ICT portal.",
+            "",
+            f"Username : {user.username}",
+            f"Email    : {user.email or '—'}",
+            f"Full name: {user.full_name or '—'}",
+            f"Created  : {how}",
+            f"Rights   : {user.role_label}",
+            "",
+            "Review it, or change what it may do, under Admin > Users.",
+        ]
+    )
+    return send_email(
+        subject=subject,
+        body=body,
+        recipients=current_app.config.get("NOTIFY_EMAILS") or [],
+    )
 
 
 @best_effort

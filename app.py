@@ -14,10 +14,9 @@ from flask import (
     url_for,
 )
 
-from sqlalchemy import case, or_
-
+from accounts import find_account, register_account_routes
 from admin_users import register_admin_user_routes
-from asset_register import search_assets, seed_computer_assets
+from asset_register import computers_by_branch, search_assets, seed_computer_assets
 from auth import (
     admin_required,
     current_admin,
@@ -26,6 +25,7 @@ from auth import (
     login_user,
     logout_user,
     manager_required,
+    register_access_gate,
 )
 from config import Config
 from extensions import db, migrate, socketio
@@ -55,6 +55,9 @@ def create_app(config_class=Config):
     register_commands(app)
     register_helpdesk(app)
     register_admin_user_routes(app)
+    register_account_routes(app)
+    # Last, so it guards every route the calls above registered.
+    register_access_gate(app)
     return app
 
 
@@ -177,27 +180,19 @@ def register_routes(app: Flask) -> None:
 
     @app.route("/assets")
     def computer_register():
-        """The register an officer browses: serial, model, and who holds it.
+        """The register an officer browses, one accordion per branch.
 
         Clicking an officer opens the maintenance form already filled in for
-        that machine.
+        that machine — so only actual computers are listed. The register's
+        telephones, printers and switches have no maintenance report to open
+        and would only be in the way. `/admin/assets` still shows every line.
         """
-        # Rows the officer can actually act on lead; the register's unassigned
-        # lines (shared phones, spare gear) still appear, at the end.
-        unassigned = case(
-            (
-                or_(
-                    ComputerAsset.responsible_officer.is_(None),
-                    ComputerAsset.responsible_officer == "",
-                ),
-                1,
-            ),
-            else_=0,
+        branches = computers_by_branch()
+        return render_template(
+            "register.html",
+            branches=branches,
+            total=sum(len(assets) for _, assets in branches),
         )
-        assets = ComputerAsset.query.order_by(
-            unassigned, ComputerAsset.responsible_officer, ComputerAsset.serial_no
-        ).all()
-        return render_template("register.html", assets=assets)
 
     @app.route("/assets/lookup")
     def asset_lookup():
@@ -244,14 +239,24 @@ def register_routes(app: Flask) -> None:
     @app.route("/login", methods=["GET", "POST"])
     def login():
         """One sign-in for the maintenance admin area and the ICT help desk."""
-        next_url = request.values.get("next") or ""
+        next_url = safe_next(request.values.get("next"))
 
         if request.method == "POST":
-            username = request.form.get("username", "").strip()
+            identifier = request.form.get("username", "").strip()
             password = request.form.get("password", "")
-            user = User.query.filter_by(username=username, is_active=True).first()
+            user = find_account(identifier)
 
-            if user and user.check_password(password):
+            if user and user.is_active and user.check_password(password):
+                # Right credentials, unproved address: say so plainly, since
+                # the password already showed the account is theirs.
+                if user.awaiting_email_confirmation:
+                    flash(
+                        "Confirm your email address before signing in. "
+                        "Check your inbox for the link, or request a new one.",
+                        "warning",
+                    )
+                    return redirect(url_for("resend_confirmation", email=user.email))
+
                 login_user(user)
                 flash(f"Signed in as {user.display_name}.", "success")
                 return redirect(next_url or landing_page_for(user))
@@ -454,6 +459,20 @@ def parse_time(value: str):
     return None
 
 
+def safe_next(target: str | None) -> str:
+    """Only ever bounce back to a path on this site.
+
+    The access gate puts the page somebody asked for into `?next=`, so this
+    value reaches the sign-in form on every redirect. Anything that names a
+    host — `//evil.test`, `https://evil.test` — is dropped rather than turned
+    into an off-site redirect from our own login page.
+    """
+    target = (target or "").strip()
+    if not target.startswith("/") or target.startswith("//"):
+        return ""
+    return target
+
+
 def current_default_user_password() -> str:
     return current_app.config["DEFAULT_USER_PASSWORD"]
 
@@ -549,7 +568,7 @@ if __name__ == "__main__":
     socketio.run(
         app,
         host=os.getenv("APP_HOST", "0.0.0.0"),
-        port=int(os.getenv("APP_PORT", "5000")),
+        port=5228,
         debug=True,
         allow_unsafe_werkzeug=True,
     )
