@@ -21,7 +21,7 @@ class TestConfig(Config):
     MAIL_SUPPRESS_SEND = True
     MAIL_USERNAME = "helpdesk-test@example.org"
     MAIL_DEFAULT_SENDER = "helpdesk-test@example.org"
-    NOTIFY_EMAILS = ["jonyango@pbora.go.ke", "ictsupport@pbora.go.ke"]
+    NOTIFY_EMAILS = ["jonyango@pbora.go.ke"]
 
 
 @pytest.fixture

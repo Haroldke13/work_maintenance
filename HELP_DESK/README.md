@@ -76,8 +76,7 @@ history is visible on the ticket.
 
 ## Email
 
-Every new complaint is emailed to `NOTIFY_EMAILS` (`jonyango@pbora.go.ke` and
-`ictsupport@pbora.go.ke`) plus every platform account holding an email address, with the
+Every new complaint is emailed only to `NOTIFY_EMAILS` (`jonyango@pbora.go.ke`), with the
 reporter as `Reply-To` and `PBORA` as the sender name. Delivery is best-effort on a
 background thread: a mail failure is logged and never loses the ticket. See the root
 README for the Gmail settings.

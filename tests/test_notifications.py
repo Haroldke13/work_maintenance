@@ -1,16 +1,16 @@
-"""Every submitted response is emailed to the ICT addresses."""
+"""Every submitted response is emailed only to the configured recipient."""
 
-from conftest import create_user, sign_in, submit_complaint
+from conftest import sign_in, submit_complaint
 from test_routes import valid_maintenance_form
 
 from mailer import send_email
 from models import User
 
 
-RECIPIENTS = "jonyango@pbora.go.ke, ictsupport@pbora.go.ke"
+RECIPIENTS = "jonyango@pbora.go.ke"
 
 
-def test_new_complaint_is_emailed_to_both_addresses(client, outbox):
+def test_new_complaint_is_emailed_only_to_jonyango(client, outbox):
     submit_complaint(client)
 
     assert len(outbox) == 1
@@ -29,7 +29,7 @@ def test_new_complaint_is_emailed_to_both_addresses(client, outbox):
     assert "NGOB-PC-002" in body
 
 
-def test_maintenance_report_is_emailed_to_both_addresses(client, outbox):
+def test_maintenance_report_is_emailed_only_to_jonyango(client, outbox):
     sign_in(client)
     outbox.clear()
     client.post("/maintenance", data=valid_maintenance_form())
@@ -40,10 +40,18 @@ def test_maintenance_report_is_emailed_to_both_addresses(client, outbox):
     assert message["To"] == RECIPIENTS
     assert message["Subject"].startswith("[Maintenance Report] ROUTE-PC")
 
-    body = message.get_content()
+    body = message.get_body(preferencelist=("plain",)).get_content()
     assert "Route Coverage Officer" in body
     assert "1. Computer and peripherals cleaned?: Yes" in body
     assert "12. Disk defragmentation done?: No" in body
+
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 1
+    pdf = attachments[0]
+    assert pdf.get_content_type() == "application/pdf"
+    assert pdf.get_filename().startswith("maintenance-report-")
+    assert pdf.get_payload(decode=True).startswith(b"%PDF-1.4")
+    assert pdf.get_payload(decode=True).rstrip().endswith(b"%%EOF")
 
 
 def test_free_text_problem_type_reaches_the_email(client, outbox):
@@ -68,44 +76,7 @@ def test_free_text_problem_type_reaches_the_email(client, outbox):
     assert len(outbox[0]["Subject"]) < 160
 
 
-def test_account_holders_receive_mail_even_without_configured_addresses(app, client, outbox):
-    """Accounts on the platform are recipients in their own right."""
-    app.config["NOTIFY_EMAILS"] = []
-
-    submit_complaint(client)
-
-    assert len(outbox) == 1
-    recipients = outbox[0]["To"]
-    assert "jonyango@pbora.go.ke" in recipients
-    assert "ictsupport@pbora.go.ke" in recipients
-
-
-def test_recipients_are_deduplicated(app, client, outbox):
-    """ictmanager and icthelpdesk share ictsupport@, and jonyango@ is also configured."""
-    submit_complaint(client)
-
-    addresses = [a.strip() for a in outbox[0]["To"].split(",")]
-
-    assert addresses == sorted(set(addresses), key=addresses.index)
-    assert addresses.count("ictsupport@pbora.go.ke") == 1
-    assert addresses.count("jonyango@pbora.go.ke") == 1
-
-
-def test_a_new_account_with_an_email_joins_the_notification_list(app, client, outbox):
-    from conftest import sign_in
-
-    sign_in(client, "jonyango", "field.123")
-    create_user(client, "registry_head", email="registry@pbora.go.ke",
-                receives_notifications="on")
-    outbox.clear()
-
-    submit_complaint(client)
-
-    assert "registry@pbora.go.ke" in outbox[0]["To"]
-
-
-def test_an_account_can_be_left_off_the_notification_list(app, client, outbox):
-    """ictmanager and icthelpdesk share one address, so use a unique one here."""
+def test_platform_accounts_are_not_added_to_notification_recipients(app, client, outbox):
     with app.app_context():
         from extensions import db
 
@@ -115,28 +86,13 @@ def test_an_account_can_be_left_off_the_notification_list(app, client, outbox):
         db.session.commit()
 
     submit_complaint(client)
-    assert "registry@pbora.go.ke" in outbox[0]["To"]
-
-    with app.app_context():
-        from extensions import db
-
-        User.query.filter_by(username="registry_head").one().receives_notifications = False
-        db.session.commit()
-
-    outbox.clear()
-    submit_complaint(client, subject="Second complaint")
 
     assert "registry@pbora.go.ke" not in outbox[0]["To"]
-    assert "jonyango@pbora.go.ke" in outbox[0]["To"]
+    assert outbox[0]["To"] == RECIPIENTS
 
 
 def test_nothing_is_sent_when_there_is_nobody_to_send_to(app, client, outbox):
     app.config["NOTIFY_EMAILS"] = []
-    with app.app_context():
-        from extensions import db
-
-        User.query.update({User.email: None})
-        db.session.commit()
 
     submit_complaint(client)
 
@@ -176,7 +132,6 @@ def test_jonyango_account_pegs_to_its_address(app):
         admin = User.query.filter_by(username="jonyango").one()
 
         assert admin.email == "jonyango@pbora.go.ke"
-        assert User.query.filter_by(username="icthelpdesk").one().email == "ictsupport@pbora.go.ke"
 
 
 def test_sender_shows_the_organisation_not_the_gmail_account(client, outbox):

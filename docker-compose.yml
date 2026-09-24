@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-cleanup_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cleanup_password}
     ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,10 +24,20 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-cleanup_user}:${POSTGRES_PASSWORD:-cleanup_password}@db:5432/${POSTGRES_DB:-cleanup_practical}
     ports:
-      - "5000:5000"
+      - "${APP_HOST:-0.0.0.0}:${APP_PORT:-5003}:5000"
     depends_on:
       db:
         condition: service_healthy
+    networks:
+      default:
+      bcramp-edge:
+        aliases:
+          - interns
 
 volumes:
   postgres_data:
+
+networks:
+  bcramp-edge:
+    external: true
+    name: bcramp-edge

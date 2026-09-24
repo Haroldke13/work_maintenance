@@ -21,27 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 def notification_recipients(app) -> list[str]:
-    """The fixed ICT addresses, plus every platform account that can receive mail.
-
-    Deduplicated case-insensitively while keeping the configured addresses first,
-    so an account whose address is already in NOTIFY_EMAILS is not mailed twice.
-    """
-    from models import User
-
+    """Return only the explicitly configured notification addresses."""
     addresses = list(app.config.get("NOTIFY_EMAILS") or [])
-    try:
-        addresses += [
-            user.email
-            for user in User.query.filter(
-                User.is_active.is_(True),
-                User.receives_notifications.is_(True),
-                User.email.isnot(None),
-            ).order_by(User.username)
-        ]
-    except Exception:
-        # No database yet (or it is mid-migration): the configured list still stands.
-        logger.exception("Could not read account notification addresses")
-
     seen, unique = set(), []
     for address in addresses:
         key = (address or "").strip().lower()
@@ -85,7 +66,7 @@ def outbox(app) -> list[EmailMessage]:
     return app.extensions.setdefault("mail_outbox", [])
 
 
-def send_email(subject: str, body: str, recipients=None, reply_to=None) -> bool:
+def send_email(subject: str, body: str, recipients=None, reply_to=None, attachments=None) -> bool:
     """Queue one plain-text notification. Returns False when nothing was queued."""
     app = current_app._get_current_object()
     recipients = recipients or notification_recipients(app)
@@ -101,6 +82,8 @@ def send_email(subject: str, body: str, recipients=None, reply_to=None) -> bool:
     if reply_to:
         message["Reply-To"] = reply_to
     message.set_content(body)
+    for content, maintype, subtype, filename in attachments or []:
+        message.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
 
     if app.config.get("MAIL_SUPPRESS_SEND"):
         outbox(app).append(message)

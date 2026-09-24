@@ -105,7 +105,7 @@ def test_an_unsigned_report_is_still_accepted(client, app):
 def test_the_email_names_the_signature_instead_of_carrying_its_base64(client, outbox):
     client.post("/maintenance", data=valid_maintenance_form())
 
-    body = outbox[0].get_content()
+    body = outbox[0].get_body(preferencelist=("plain",)).get_content()
 
     assert "Officer sign: (signed)" in body
     assert "data:image/png;base64," not in body

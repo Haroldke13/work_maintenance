@@ -89,7 +89,7 @@ MAIL_SENDER_NAME=PBORA
 MAIL_DEFAULT_SENDER=CHANGE_ME
 
 # Who hears about submitted reports and newly created accounts.
-NOTIFY_EMAILS=jonyango@pbora.go.ke,ictsupport@pbora.go.ke
+NOTIFY_EMAILS=jonyango@pbora.go.ke
 ADMIN_EMAIL=jonyango@pbora.go.ke
 
 # How long a signup confirmation link stays valid, in seconds (default 72h).

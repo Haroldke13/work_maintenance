@@ -5,15 +5,16 @@ from flask import current_app, url_for
 from form_schema import FIELD_SECTIONS, is_signature_data_url
 from mailer import best_effort, send_email
 from models import MaintenanceReport, User
+from report_pdf import maintenance_report_pdf, maintenance_report_pdf_filename
 
 
 @best_effort
 def email_new_account(user: User, how: str) -> bool:
     """Tell ICT that an account now exists. `how` says where it came from.
 
-    Goes to the configured ICT addresses only — the administrator and the
-    shared inbox. Not to the account holder, who has their own mail about it,
-    and deliberately not to the wider notification list a report goes to: who
+    Goes only to the configured notification address. Not to the account
+    holder, who has their own mail about it, and deliberately not to any other
+    platform account: who
     holds an account is ICT's business, not every user's.
 
     Self-service signup is the case that matters: nobody on staff was
@@ -46,7 +47,16 @@ def email_maintenance_report(report: MaintenanceReport) -> bool:
         f"[Maintenance Report] {report.computer_name} · {report.department} "
         f"· {report.report_date:%Y-%m-%d}"
     )
-    return send_email(subject=subject, body=_body(report))
+    return send_email(
+        subject=subject,
+        body=_body(report),
+        attachments=[(
+            maintenance_report_pdf(report),
+            "application",
+            "pdf",
+            maintenance_report_pdf_filename(report),
+        )],
+    )
 
 
 def _body(report: MaintenanceReport) -> str:

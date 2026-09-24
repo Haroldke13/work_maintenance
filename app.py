@@ -493,10 +493,8 @@ def seed_database(app: Flask) -> None:
 
 
 def _support_email(app: Flask) -> str | None:
-    """The shared ICT address: the notify list minus the administrator's own."""
-    admin_email = app.config.get("ADMIN_EMAIL")
-    others = [a for a in app.config.get("NOTIFY_EMAILS", []) if a != admin_email]
-    return others[0] if others else admin_email
+    """The shared ICT account address, independent of notification recipients."""
+    return app.config.get("SUPPORT_EMAIL") or app.config.get("ADMIN_EMAIL")
 
 
 def seed_accounts(app: Flask) -> None:

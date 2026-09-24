@@ -24,6 +24,7 @@ class Config:
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "jonyango")
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "field.123")
     ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "jonyango@pbora.go.ke")
+    SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "ictsupport@pbora.go.ke")
     DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "field.123")
 
     # Help desk (served by the HELP_DESK blueprint on this same app and port).
@@ -49,7 +50,7 @@ class Config:
     NOTIFY_EMAILS = [
         address.strip()
         for address in os.getenv(
-            "NOTIFY_EMAILS", "jonyango@pbora.go.ke,ictsupport@pbora.go.ke"
+            "NOTIFY_EMAILS", "jonyango@pbora.go.ke"
         ).split(",")
         if address.strip()
     ]

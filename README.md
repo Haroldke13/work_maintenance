@@ -184,8 +184,7 @@ Only self-registered accounts confirm. An account staff create is vouched for by
 created it, which is what the `self_registered` column records.
 
 Both routes to a new account — signup confirmation and the admin console — email
-`NOTIFY_EMAILS` so ICT knows the account exists. That alert deliberately does not go to
-the wider notification list a maintenance report reaches.
+`NOTIFY_EMAILS` so ICT knows the account exists. It is not sent to other platform users.
 
 ### Administrator console
 
@@ -208,7 +207,8 @@ Two rights are assigned independently, both at creation and afterwards:
   the account works the queue. Managers may also close tickets and take over another
   person's task.
 
-Plus an **email this account** switch that puts the account on the notification list.
+The legacy **email this account** preference is retained for database compatibility,
+but system notifications are restricted to `NOTIFY_EMAILS`.
 
 Guardrails stop the console being locked: an administrator cannot remove their own
 administrator rights or deactivate their own account, and the last active administrator
@@ -321,15 +321,17 @@ See `HELP_DESK/README.md` for the work queue.
 
 ## Email Notifications
 
-Every submitted response is emailed to **the addresses in `NOTIFY_EMAILS` plus every
-platform account that has an email address**, deduplicated case-insensitively. An account
-can be left off the list with the *Email this account* switch when the admin creates it
-(`users.receives_notifications`).
+Every submitted response is emailed only to the addresses explicitly listed in
+`NOTIFY_EMAILS`. Platform account email addresses are not automatically added.
 
 What gets sent:
 
 - a new help desk complaint, with the reporter set as `Reply-To` so ICT can answer directly;
 - a submitted computer maintenance report, with every field.
+
+Maintenance-report messages also include a per-computer PDF extract containing
+all report sections and sign-off status. The attachment is named with the report
+ID and the computer serial number (or model when no serial number was recorded).
 
 Configure the sending account in `.env` — `MAIL_PASSWORD` must be a Gmail **App Password**,
 not the account password:
@@ -342,7 +344,7 @@ MAIL_USERNAME=<sending gmail address>
 MAIL_PASSWORD=<gmail app password>
 MAIL_SENDER_NAME=PBORA
 MAIL_DEFAULT_SENDER=<sending gmail address>
-NOTIFY_EMAILS=jonyango@pbora.go.ke,ictsupport@pbora.go.ke
+NOTIFY_EMAILS=jonyango@pbora.go.ke
 ```
 
 `MAIL_SENDER_NAME` is the name recipients see in their inbox. Without it Gmail falls back

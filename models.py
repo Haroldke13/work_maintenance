@@ -39,7 +39,8 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, nullable=False, default=False)
     helpdesk_role = db.Column(db.String(20), nullable=True)  # officer | manager | None
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    # Account holders are on the notification list by default.
+    # Legacy preference retained for schema compatibility; notification delivery
+    # is now restricted to NOTIFY_EMAILS.
     receives_notifications = db.Column(db.Boolean, nullable=False, default=True)
     # Where the account came from, and whether its address has been proved.
     #
